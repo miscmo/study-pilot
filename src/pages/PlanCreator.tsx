@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { aiService } from '../services/aiService'
-import type { StudyPlan } from '../types'
+import type { StudyPlan, StudyOutlineItem } from '../types'
 import { 
   Sparkles, 
   Loader2, 
@@ -10,7 +11,12 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
-  Wand2
+  Wand2,
+  Edit2,
+  X,
+  Save,
+  Plus,
+  Trash2
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -30,6 +36,109 @@ const dailyMinutesOptions = [
   { label: '自定义', value: -1 },
 ]
 
+// 大纲项编辑弹窗
+function OutlineEditModal({
+  item,
+  onSave,
+  onClose
+}: {
+  item: StudyOutlineItem
+  onSave: (updated: StudyOutlineItem) => void
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState(item.title)
+  const [description, setDescription] = useState(item.description)
+  const [objectives, setObjectives] = useState(item.objectives.join('\n'))
+  const [estimatedMinutes, setEstimatedMinutes] = useState(item.estimatedMinutes)
+
+  const handleSave = () => {
+    onSave({
+      ...item,
+      title,
+      description,
+      objectives: objectives.split('\n').filter(o => o.trim()),
+      estimatedMinutes
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-800">
+            编辑第 {item.day} 天
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">标题</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              学习目标（每行一个）
+            </label>
+            <textarea
+              value={objectives}
+              onChange={(e) => setObjectives(e.target.value)}
+              rows={4}
+              placeholder="每行输入一个学习目标"
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">预计时间（分钟）</label>
+            <input
+              type="number"
+              min="1"
+              value={estimatedMinutes}
+              onChange={(e) => setEstimatedMinutes(parseInt(e.target.value) || 60)}
+              className="w-32 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 py-2.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl hover:shadow-lg flex items-center justify-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function PlanCreator() {
   const { 
     addPlan, 
@@ -40,6 +149,11 @@ export default function PlanCreator() {
     updatePlanCreatorDraft,
     resetPlanCreatorDraft
   } = useStore()
+  
+  // 编辑状态
+  const [editingOutlineItem, setEditingOutlineItem] = useState<StudyOutlineItem | null>(null)
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [tempDescription, setTempDescription] = useState('')
   
   // 从 store 获取草稿状态
   const { 
@@ -147,6 +261,55 @@ export default function PlanCreator() {
     }
   }
 
+  // 更新大纲项
+  const handleUpdateOutlineItem = (updated: StudyOutlineItem) => {
+    if (!generatedOutline) return
+    const newOutline = generatedOutline.outline.map(item =>
+      item.id === updated.id ? updated : item
+    )
+    setGeneratedOutline({ ...generatedOutline, outline: newOutline })
+    setEditingOutlineItem(null)
+  }
+
+  // 删除大纲项
+  const handleDeleteOutlineItem = (day: number) => {
+    if (!generatedOutline) return
+    if (!confirm(`确定要删除第 ${day} 天吗？`)) return
+    
+    const newOutline = generatedOutline.outline
+      .filter(item => item.day !== day)
+      .map((item, index) => ({ ...item, day: index + 1, id: `outline-${index + 1}` }))
+    setGeneratedOutline({ ...generatedOutline, outline: newOutline })
+    setTotalDays(newOutline.length)
+  }
+
+  // 添加新的大纲项
+  const handleAddOutlineItem = () => {
+    if (!generatedOutline) return
+    const newDay = generatedOutline.outline.length + 1
+    const newItem: StudyOutlineItem = {
+      id: `outline-${newDay}`,
+      day: newDay,
+      title: `第 ${newDay} 天`,
+      description: '请编辑此天的学习内容',
+      objectives: ['学习目标 1'],
+      estimatedMinutes: getActualDailyMinutes()
+    }
+    setGeneratedOutline({
+      ...generatedOutline,
+      outline: [...generatedOutline.outline, newItem]
+    })
+    setTotalDays(newDay)
+    setEditingOutlineItem(newItem)
+  }
+
+  // 更新计划描述
+  const handleSaveDescription = () => {
+    if (!generatedOutline) return
+    setGeneratedOutline({ ...generatedOutline, description: tempDescription })
+    setEditingDescription(false)
+  }
+
   if (step === 'saved') {
     return (
       <div className="p-8 flex items-center justify-center min-h-full animate-fadeIn">
@@ -187,13 +350,54 @@ export default function PlanCreator() {
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-800 mb-2">学习计划预览</h1>
-            <p className="text-gray-500">请确认以下学习计划是否符合你的需求</p>
+            <p className="text-gray-500">请确认以下学习计划，可点击编辑按钮修改内容</p>
           </div>
 
           {/* 计划概览 */}
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">{topic}</h2>
-            <p className="text-gray-600 mb-4">{generatedOutline.description}</p>
+            <div className="flex items-start justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-800">{topic}</h2>
+            </div>
+            
+            {editingDescription ? (
+              <div className="mb-4">
+                <textarea
+                  value={tempDescription}
+                  onChange={(e) => setTempDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+                />
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => setEditingDescription(false)}
+                    className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSaveDescription}
+                    className="px-3 py-1.5 text-sm bg-primary-500 text-white rounded-lg hover:bg-primary-600"
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 mb-4 group">
+                <p className="text-gray-600 flex-1">{generatedOutline.description}</p>
+                <button
+                  onClick={() => {
+                    setTempDescription(generatedOutline.description)
+                    setEditingDescription(true)
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-primary-500 hover:bg-gray-100 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="编辑描述"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            
             <div className="flex items-center gap-6 text-sm text-gray-500">
               <span className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
@@ -208,32 +412,61 @@ export default function PlanCreator() {
 
           {/* 大纲列表 */}
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">学习大纲</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-800">学习大纲</h3>
+              <button
+                onClick={handleAddOutlineItem}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                添加一天
+              </button>
+            </div>
             <div className="space-y-3">
               {generatedOutline.outline.map((item) => (
                 <div 
                   key={item.id}
-                  className="border border-gray-100 rounded-xl overflow-hidden"
+                  className="border border-gray-100 rounded-xl overflow-hidden group"
                 >
-                  <button
-                    onClick={() => toggleDay(item.day)}
-                    className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
+                  <div className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+                    <button
+                      onClick={() => toggleDay(item.day)}
+                      className="flex items-center gap-4 flex-1 text-left"
+                    >
                       <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
                         {item.day}
                       </div>
-                      <div className="text-left">
+                      <div>
                         <h4 className="font-medium text-gray-800">{item.title}</h4>
                         <p className="text-sm text-gray-500">{item.estimatedMinutes} 分钟</p>
                       </div>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEditingOutlineItem(item)}
+                        className="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                        title="编辑"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      {generatedOutline.outline.length > 1 && (
+                        <button
+                          onClick={() => handleDeleteOutlineItem(item.day)}
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                          title="删除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button onClick={() => toggleDay(item.day)} className="p-2">
+                        {expandedDays.includes(item.day) ? (
+                          <ChevronUp className="w-5 h-5 text-gray-400" />
+                        ) : (
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        )}
+                      </button>
                     </div>
-                    {expandedDays.includes(item.day) ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    )}
-                  </button>
+                  </div>
                   {expandedDays.includes(item.day) && (
                     <div className="px-4 pb-4 border-t border-gray-100 pt-4 bg-gray-50">
                       <p className="text-gray-600 mb-3">{item.description}</p>
@@ -271,6 +504,15 @@ export default function PlanCreator() {
             </button>
           </div>
         </div>
+
+        {/* 编辑弹窗 */}
+        {editingOutlineItem && (
+          <OutlineEditModal
+            item={editingOutlineItem}
+            onSave={handleUpdateOutlineItem}
+            onClose={() => setEditingOutlineItem(null)}
+          />
+        )}
       </div>
     )
   }

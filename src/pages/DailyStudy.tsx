@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { aiService } from '../services/aiService'
-import type { DailyTask, TaskItem, TaskNote } from '../types'
+import type { DailyTask, TaskItem, TaskNote, Resource, Deliverable } from '../types'
 import MDEditor from '@uiw/react-md-editor'
 import { 
   Loader2, 
@@ -22,7 +22,10 @@ import {
   Target,
   Zap,
   PenLine,
-  Save
+  Save,
+  Edit2,
+  Plus,
+  Trash2
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -31,6 +34,235 @@ const difficultyConfig = {
   basic: { label: '基础', color: 'bg-green-100 text-green-600' },
   intermediate: { label: '进阶', color: 'bg-yellow-100 text-yellow-600' },
   advanced: { label: '挑战', color: 'bg-red-100 text-red-600' }
+}
+
+// 任务编辑弹窗组件
+function TaskEditModal({
+  task,
+  onSave,
+  onClose
+}: {
+  task: TaskItem
+  onSave: (updated: TaskItem) => void
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState(task.title)
+  const [description, setDescription] = useState(task.description)
+  const [difficulty, setDifficulty] = useState(task.difficulty)
+  const [estimatedMinutes, setEstimatedMinutes] = useState(task.estimatedMinutes)
+  const [resources, setResources] = useState<Resource[]>(task.resources)
+  const [deliverableTitle, setDeliverableTitle] = useState(task.deliverable.title)
+  const [deliverableDesc, setDeliverableDesc] = useState(task.deliverable.description)
+  const [deliverableType, setDeliverableType] = useState(task.deliverable.type)
+
+  const handleSave = () => {
+    onSave({
+      ...task,
+      title,
+      description,
+      difficulty,
+      estimatedMinutes,
+      resources,
+      deliverable: {
+        ...task.deliverable,
+        title: deliverableTitle,
+        description: deliverableDesc,
+        type: deliverableType
+      }
+    })
+  }
+
+  const addResource = () => {
+    setResources([...resources, {
+      id: `resource-${Date.now()}`,
+      title: '',
+      type: 'article',
+      description: '',
+      url: ''
+    }])
+  }
+
+  const updateResource = (index: number, field: keyof Resource, value: string) => {
+    const updated = [...resources]
+    updated[index] = { ...updated[index], [field]: value }
+    setResources(updated)
+  }
+
+  const removeResource = (index: number) => {
+    setResources(resources.filter((_, i) => i !== index))
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn">
+      <div className="bg-white rounded-2xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-800">编辑任务</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {/* 任务标题 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">任务标题</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          {/* 任务描述 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">任务描述</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            />
+          </div>
+
+          {/* 难度和时间 */}
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">难度</label>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value as TaskItem['difficulty'])}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+              >
+                <option value="basic">基础</option>
+                <option value="intermediate">进阶</option>
+                <option value="advanced">挑战</option>
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">预计时间（分钟）</label>
+              <input
+                type="number"
+                min="1"
+                value={estimatedMinutes}
+                onChange={(e) => setEstimatedMinutes(parseInt(e.target.value) || 20)}
+                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+
+          {/* 参考资料 */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-gray-700">参考资料</label>
+              <button
+                onClick={addResource}
+                className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" />
+                添加资料
+              </button>
+            </div>
+            <div className="space-y-2">
+              {resources.map((resource, index) => (
+                <div key={resource.id} className="p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={resource.title}
+                      onChange={(e) => updateResource(index, 'title', e.target.value)}
+                      placeholder="资料标题"
+                      className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    <select
+                      value={resource.type}
+                      onChange={(e) => updateResource(index, 'type', e.target.value)}
+                      className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
+                    >
+                      <option value="article">文章</option>
+                      <option value="video">视频</option>
+                      <option value="book">书籍</option>
+                      <option value="documentation">文档</option>
+                      <option value="practice">练习</option>
+                    </select>
+                    <button
+                      onClick={() => removeResource(index)}
+                      className="p-1.5 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={resource.url || ''}
+                    onChange={(e) => updateResource(index, 'url', e.target.value)}
+                    placeholder="链接（可选）"
+                    className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              ))}
+              {resources.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-2">暂无参考资料</p>
+              )}
+            </div>
+          </div>
+
+          {/* 验收成果 */}
+          <div className="p-4 bg-blue-50 rounded-xl space-y-3">
+            <h4 className="text-sm font-medium text-blue-800">验收成果</h4>
+            <div>
+              <label className="block text-xs text-blue-600 mb-1">成果标题</label>
+              <input
+                type="text"
+                value={deliverableTitle}
+                onChange={(e) => setDeliverableTitle(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-blue-600 mb-1">成果描述</label>
+              <textarea
+                value={deliverableDesc}
+                onChange={(e) => setDeliverableDesc(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-blue-600 mb-1">成果类型</label>
+              <select
+                value={deliverableType}
+                onChange={(e) => setDeliverableType(e.target.value as Deliverable['type'])}
+                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="note">笔记</option>
+                <option value="code">代码</option>
+                <option value="project">项目</option>
+                <option value="quiz">测验</option>
+                <option value="summary">总结</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            className="flex-1 py-2.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl hover:shadow-lg flex items-center justify-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // 重新生成弹窗组件
@@ -326,6 +558,7 @@ function TaskCard({
   onToggleComplete,
   onToggleDeliverable,
   onRegenerate,
+  onEdit,
   isRegenerating,
   disabled
 }: {
@@ -337,6 +570,7 @@ function TaskCard({
   onToggleComplete: () => void
   onToggleDeliverable: () => void
   onRegenerate: () => void
+  onEdit: () => void
   isRegenerating: boolean
   disabled: boolean
 }) {
@@ -476,23 +710,35 @@ function TaskCard({
             </div>
           </div>
 
-          {/* 重新生成按钮 */}
+          {/* 操作按钮 */}
           {!disabled && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onRegenerate()
-              }}
-              disabled={isRegenerating}
-              className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
-            >
-              {isRegenerating ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3 h-3" />
-              )}
-              重新生成
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEdit()
+                }}
+                className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
+              >
+                <Edit2 className="w-3 h-3" />
+                编辑
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRegenerate()
+                }}
+                disabled={isRegenerating}
+                className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
+              >
+                {isRegenerating ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                重新生成
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -520,6 +766,9 @@ export default function DailyStudy() {
   const [expandedTasks, setExpandedTasks] = useState<string[]>([])
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [editingTask, setEditingTask] = useState<TaskItem | null>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [tempTitle, setTempTitle] = useState('')
 
   const currentPlan = plans.find(p => p.id === currentPlanId)
   const rawCurrentTask = dailyTasks.find(
@@ -709,6 +958,23 @@ export default function DailyStudy() {
     updateDailyTask(currentTask.id, { tasks: updatedTasks })
   }
 
+  // 更新任务
+  const handleUpdateTask = (updated: TaskItem) => {
+    if (!currentTask) return
+    const updatedTasks = currentTask.tasks.map(t =>
+      t.id === updated.id ? updated : t
+    )
+    updateDailyTask(currentTask.id, { tasks: updatedTasks })
+    setEditingTask(null)
+  }
+
+  // 更新今日标题
+  const handleSaveTitle = () => {
+    if (!currentTask) return
+    updateDailyTask(currentTask.id, { title: tempTitle })
+    setEditingTitle(false)
+  }
+
   if (!currentPlan) {
     return (
       <div className="h-full flex items-center justify-center animate-fadeIn">
@@ -864,21 +1130,59 @@ export default function DailyStudy() {
                 )}
 
                 {/* 任务头部 */}
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-medium text-gray-800">{currentTask.title}</h3>
-                  {!isReviewed && (
-                    <button
-                      onClick={() => handleOpenRegenerateModal(null)}
-                      disabled={regeneratingTaskId !== null}
-                      className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
-                    >
-                      {regeneratingTaskId === 'all' ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3 h-3" />
+                <div className="flex items-center justify-between mb-2 group">
+                  {editingTitle ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="text"
+                        value={tempTitle}
+                        onChange={(e) => setTempTitle(e.target.value)}
+                        className="flex-1 px-3 py-1 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => setEditingTitle(false)}
+                        className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleSaveTitle}
+                        className="px-2 py-1 text-xs bg-primary-500 text-white rounded hover:bg-primary-600"
+                      >
+                        保存
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <h3 className="font-medium text-gray-800">{currentTask.title}</h3>
+                      {!isReviewed && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setTempTitle(currentTask.title)
+                              setEditingTitle(true)
+                            }}
+                            className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            编辑
+                          </button>
+                          <button
+                            onClick={() => handleOpenRegenerateModal(null)}
+                            disabled={regeneratingTaskId !== null}
+                            className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
+                          >
+                            {regeneratingTaskId === 'all' ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3 h-3" />
+                            )}
+                            重新生成
+                          </button>
+                        </div>
                       )}
-                      重新生成
-                    </button>
+                    </>
                   )}
                 </div>
 
@@ -894,6 +1198,7 @@ export default function DailyStudy() {
                     onToggleComplete={() => handleToggleTask(task.id)}
                     onToggleDeliverable={() => handleToggleDeliverable(task.id)}
                     onRegenerate={() => handleOpenRegenerateModal(task.id)}
+                    onEdit={() => setEditingTask(task)}
                     isRegenerating={regeneratingTaskId === task.id}
                     disabled={isReviewed}
                   />
@@ -946,6 +1251,15 @@ export default function DailyStudy() {
           ? currentTask?.tasks.find(t => t.id === pendingRegenerateTaskId)?.title 
           : undefined}
       />
+
+      {/* 任务编辑弹窗 */}
+      {editingTask && (
+        <TaskEditModal
+          task={editingTask}
+          onSave={handleUpdateTask}
+          onClose={() => setEditingTask(null)}
+        />
+      )}
     </div>
   )
 }
