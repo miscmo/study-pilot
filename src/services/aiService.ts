@@ -497,6 +497,51 @@ ${submissionContent}
     }
   }
 
+  // 根据任务目标生成智能笔记模板
+  async generateNoteTemplate(
+    taskTitle: string,
+    taskDescription: string,
+    deliverableTitle: string,
+    deliverableDescription: string,
+    deliverableType: string
+  ): Promise<string> {
+    const prompt = `你是一位专业的学习导师。请根据以下学习任务信息，生成一个 Markdown 笔记模板。
+
+任务标题: ${taskTitle}
+任务描述: ${taskDescription}
+验收成果: ${deliverableTitle}
+验收要求: ${deliverableDescription}
+成果类型: ${deliverableType}
+
+【重要要求】:
+1. 模板必须紧密围绕任务目标和验收要求设计
+2. 用户按照模板填写完成后，应该能够直接满足验收要求
+3. 模板应包含具体的填写引导，而不是空泛的标题
+4. 根据成果类型调整模板结构：
+   - note: 侧重知识点记录和理解
+   - code: 侧重代码实现和解释
+   - project: 侧重项目设计和实现步骤
+   - quiz: 侧重问题回答和知识检验
+   - summary: 侧重总结归纳和反思
+
+请直接返回 Markdown 格式的模板内容，不要用代码块包裹，不要有其他说明。
+
+模板设计原则:
+- 第一级标题使用任务标题
+- 包含 2-4 个主要部分，每个部分有明确的填写指引
+- 使用 > 引用块给出填写提示
+- 使用 - [ ] 待办项列出需要完成的具体事项
+- 如果是代码类任务，预留代码块位置
+- 最后包含"验收自检"部分，列出验收要点供用户自查`
+
+    const response = await this.callAPI([
+      { role: 'system', content: '你是一位专业的学习导师，擅长设计结构化的学习笔记模板。请直接返回 Markdown 内容，不要有任何额外说明。' },
+      { role: 'user', content: prompt }
+    ])
+
+    return response.trim()
+  }
+
   // 生成明日计划预览
   async generateNextDayPreview(
     plan: StudyPlan,

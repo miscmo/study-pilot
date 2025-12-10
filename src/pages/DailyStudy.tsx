@@ -117,31 +117,14 @@ function normalizeTask(task: TaskItem, index: number): TaskItem {
   }
 }
 
-// 默认笔记模板
+// 默认笔记模板（仅作为后备）
 function getDefaultTemplate(taskTitle: string): string {
   return `# ${taskTitle}
 
 ## 学习要点
 
-- 
+> 正在生成智能模板...
 
-## 核心概念
-
-### 
-
-## 代码示例
-
-\`\`\`javascript
-
-\`\`\`
-
-## 个人理解
-
-> 
-
-## 遗留问题
-
-- [ ] 
 `
 }
 
@@ -155,26 +138,110 @@ function NotePanel({
 }) {
   const [content, setContent] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
+  const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false)
+  const { settings } = useStore()
+
+  // 生成智能模板
+  const generateSmartTemplate = async (taskItem: TaskItem) => {
+    if (!settings.apiKey) {
+      // 如果没有 API Key，使用简单模板
+      return `# ${taskItem.title}
+
+## 学习目标
+
+> ${taskItem.description}
+
+## 核心内容
+
+### 
+
+## 实践记录
+
+\`\`\`
+// 在这里记录代码或操作步骤
+\`\`\`
+
+## 验收自检
+
+- [ ] ${taskItem.deliverable.title}: ${taskItem.deliverable.description}
+
+## 个人总结
+
+> 
+`
+    }
+
+    setIsGeneratingTemplate(true)
+    try {
+      const template = await aiService.generateNoteTemplate(
+        taskItem.title,
+        taskItem.description,
+        taskItem.deliverable.title,
+        taskItem.deliverable.description,
+        taskItem.deliverable.type
+      )
+      return template
+    } catch (err) {
+      console.error('生成模板失败:', err)
+      // 失败时返回基础模板
+      return `# ${taskItem.title}
+
+## 学习目标
+
+> ${taskItem.description}
+
+## 核心内容
+
+### 
+
+## 验收自检
+
+- [ ] ${taskItem.deliverable.title}: ${taskItem.deliverable.description}
+
+## 个人总结
+
+> 
+`
+    } finally {
+      setIsGeneratingTemplate(false)
+    }
+  }
 
   useEffect(() => {
     if (task) {
-      const initialContent = task.note?.content || getDefaultTemplate(task.title)
-      setContent(initialContent)
-      setHasChanges(false)
+      if (task.note?.content) {
+        // 已有笔记，直接使用
+        setContent(task.note.content)
+        setHasChanges(false)
+      } else {
+        // 没有笔记，生成智能模板
+        setContent(getDefaultTemplate(task.title))
+        generateSmartTemplate(task).then(template => {
+          setContent(template)
+        })
+        setHasChanges(false)
+      }
     }
   }, [task?.id])
 
   useEffect(() => {
-    if (task) {
-      const originalContent = task.note?.content || getDefaultTemplate(task.title)
-      setHasChanges(content !== originalContent)
+    if (task && !isGeneratingTemplate) {
+      const originalContent = task.note?.content || ''
+      setHasChanges(content !== originalContent && content.trim() !== '')
     }
-  }, [content, task])
+  }, [content, task, isGeneratingTemplate])
 
   const handleSave = () => {
     if (task) {
       onSave(task.id, content)
       setHasChanges(false)
+    }
+  }
+
+  const handleRegenerateTemplate = async () => {
+    if (task && !isGeneratingTemplate) {
+      const template = await generateSmartTemplate(task)
+      setContent(template)
     }
   }
 
@@ -196,20 +263,40 @@ function NotePanel({
         <div className="flex items-center gap-2 min-w-0">
           <PenLine className="w-4 h-4 text-primary-500 flex-shrink-0" />
           <span className="font-medium text-gray-800 truncate">{task.title}</span>
-          {hasChanges && (
+          {isGeneratingTemplate && (
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full flex-shrink-0 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              生成模板中
+            </span>
+          )}
+          {hasChanges && !isGeneratingTemplate && (
             <span className="px-2 py-0.5 bg-yellow-100 text-yellow-600 text-xs rounded-full flex-shrink-0">
               未保存
             </span>
           )}
         </div>
-        <button
-          onClick={handleSave}
-          disabled={!hasChanges}
-          className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white text-sm rounded-lg hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Save className="w-4 h-4" />
-          保存
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRegenerateTemplate}
+            disabled={isGeneratingTemplate}
+            title="重新生成模板"
+            className="flex items-center gap-1 px-2 py-1.5 text-gray-500 hover:text-primary-500 hover:bg-gray-100 text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isGeneratingTemplate ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!hasChanges || isGeneratingTemplate}
+            className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white text-sm rounded-lg hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Save className="w-4 h-4" />
+            保存
+          </button>
+        </div>
       </div>
 
       {/* 编辑器 */}
