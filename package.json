@@ -35,9 +35,16 @@
     ],
     "mac": {
       "category": "public.app-category.education",
+      "identity": null,
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
       ]
     },
     "win": {
