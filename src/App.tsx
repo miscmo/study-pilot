@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from './store/useStore'
 import { aiService } from './services/aiService'
 import Sidebar from './components/Sidebar'
@@ -10,6 +10,7 @@ import Settings from './pages/Settings'
 
 function App() {
   const { currentView, settings } = useStore()
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     // 同步 AI 服务配置
@@ -39,7 +40,10 @@ function App() {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      <Sidebar />
+      <Sidebar 
+        collapsed={sidebarCollapsed} 
+        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
+      />
       <main className="flex-1 overflow-auto">
         {renderContent()}
       </main>
