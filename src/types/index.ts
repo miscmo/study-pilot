@@ -46,6 +46,14 @@ export interface TaskItem {
   estimatedMinutes: number
   resources: Resource[]  // 该任务的参考资料
   deliverable: Deliverable  // 该任务的验收成果
+  note?: TaskNote  // 学习笔记
+}
+
+// 任务笔记
+export interface TaskNote {
+  content: string  // Markdown 内容
+  createdAt: string
+  updatedAt: string
 }
 
 // 参考资料

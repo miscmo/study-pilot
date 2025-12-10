@@ -6,10 +6,13 @@ import {
   TrendingUp,
   Plus,
   ChevronRight,
-  Trash2
+  Trash2,
+  Download,
+  PenLine
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { zhCN } from 'date-fns/locale'
+import { exportPlanNotes, downloadMarkdown, countNotes, countWords } from '../utils/exportNotes'
 
 export default function Home() {
   const { 
@@ -44,6 +47,18 @@ export default function Home() {
     if (confirm('确定要删除这个学习计划吗？')) {
       deletePlan(planId)
     }
+  }
+
+  const handleExportNotes = (e: React.MouseEvent, plan: typeof plans[0]) => {
+    e.stopPropagation()
+    const noteCount = countNotes(dailyTasks, plan.id)
+    if (noteCount === 0) {
+      alert('该计划还没有任何笔记')
+      return
+    }
+    const markdown = exportPlanNotes(plan, dailyTasks)
+    const filename = `${plan.topic}-学习笔记.md`
+    downloadMarkdown(markdown, filename)
   }
 
   return (
@@ -120,6 +135,8 @@ export default function Home() {
               ).length
               const progress = Math.round((completedDays / plan.totalDays) * 100)
               const isSelected = currentPlanId === plan.id
+              const noteCount = countNotes(dailyTasks, plan.id)
+              const wordCount = countWords(dailyTasks, plan.id)
 
               return (
                 <div
@@ -144,6 +161,12 @@ export default function Home() {
                         }`}>
                           {plan.status === 'active' ? '进行中' : plan.status === 'completed' ? '已完成' : '已暂停'}
                         </span>
+                        {noteCount > 0 && (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-600 flex items-center gap-1">
+                            <PenLine className="w-3 h-3" />
+                            {noteCount} 篇笔记 · {wordCount} 字
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-500 mb-3 line-clamp-1">
                         {plan.description}
@@ -167,6 +190,15 @@ export default function Home() {
                           />
                         </div>
                       </div>
+                      {noteCount > 0 && (
+                        <button
+                          onClick={(e) => handleExportNotes(e, plan)}
+                          className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="导出笔记"
+                        >
+                          <Download className="w-5 h-5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => handleDeletePlan(e, plan.id)}
                         className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"

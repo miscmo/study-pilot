@@ -39,11 +39,17 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -61,6 +67,7 @@
     }
   },
   "dependencies": {
+    "@uiw/react-md-editor": "^4.0.11",
     "date-fns": "^2.30.0",
     "lucide-react": "^0.294.0",
     "marked": "^11.0.0",

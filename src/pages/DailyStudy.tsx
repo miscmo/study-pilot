@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import { aiService } from '../services/aiService'
 import type { DailyTask, TaskItem } from '../types'
+import NoteEditor from '../components/NoteEditor'
 import { 
   Loader2, 
   CheckCircle, 
@@ -19,7 +20,8 @@ import {
   X,
   MessageSquare,
   Target,
-  Zap
+  Zap,
+  PenLine
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -125,6 +127,7 @@ function TaskCard({
   onToggleComplete,
   onToggleDeliverable,
   onRegenerate,
+  onOpenNote,
   isRegenerating,
   disabled
 }: {
@@ -134,10 +137,12 @@ function TaskCard({
   onToggleComplete: () => void
   onToggleDeliverable: () => void
   onRegenerate: () => void
+  onOpenNote: () => void
   isRegenerating: boolean
   disabled: boolean
 }) {
   const difficulty = difficultyConfig[task.difficulty] || difficultyConfig.basic
+  const hasNote = task.note && task.note.content.trim().length > 0
 
   return (
     <div className={`rounded-2xl border-2 overflow-hidden transition-all ${
@@ -182,6 +187,13 @@ function TaskCard({
                 <Clock className="w-3 h-3" />
                 {task.estimatedMinutes}分钟
               </span>
+              {/* 笔记标识 */}
+              {hasNote && (
+                <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-600 flex items-center gap-1">
+                  <PenLine className="w-3 h-3" />
+                  已记录
+                </span>
+              )}
             </div>
             
             <h4 className={`font-medium ${task.completed ? 'text-green-700 line-through' : 'text-gray-800'}`}>
@@ -213,20 +225,37 @@ function TaskCard({
                 <BookOpen className="w-4 h-4 text-primary-500" />
                 参考资料
               </h5>
-              {!disabled && (
+              <div className="flex items-center gap-2">
+                {/* 笔记按钮 */}
                 <button
-                  onClick={onRegenerate}
-                  disabled={isRegenerating}
-                  className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onOpenNote()
+                  }}
+                  className={`text-xs flex items-center gap-1 px-2 py-1 rounded-lg transition-colors ${
+                    hasNote 
+                      ? 'text-blue-600 bg-blue-50 hover:bg-blue-100' 
+                      : 'text-gray-400 hover:text-primary-500 hover:bg-primary-50'
+                  }`}
                 >
-                  {isRegenerating ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3 h-3" />
-                  )}
-                  重新生成此任务
+                  <PenLine className="w-3 h-3" />
+                  {hasNote ? '编辑笔记' : '记录笔记'}
                 </button>
-              )}
+                {!disabled && (
+                  <button
+                    onClick={onRegenerate}
+                    disabled={isRegenerating}
+                    className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
+                  >
+                    {isRegenerating ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    重新生成此任务
+                  </button>
+                )}
+              </div>
             </div>
             
             {task.resources.length === 0 ? (
@@ -357,6 +386,7 @@ export default function DailyStudy() {
   const [pendingRegenerateTaskId, setPendingRegenerateTaskId] = useState<string | null>(null)
   const [expandedTasks, setExpandedTasks] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [editingNoteTaskId, setEditingNoteTaskId] = useState<string | null>(null)
 
   const currentPlan = plans.find(p => p.id === currentPlanId)
   const rawCurrentTask = dailyTasks.find(
@@ -530,6 +560,33 @@ export default function DailyStudy() {
         : [...prev, taskId]
     )
   }
+
+  // 保存笔记
+  const handleSaveNote = (taskId: string, content: string) => {
+    if (!currentTask) return
+    
+    const now = new Date().toISOString()
+    const updatedTasks = currentTask.tasks.map(t =>
+      t.id === taskId
+        ? {
+            ...t,
+            note: {
+              content,
+              createdAt: t.note?.createdAt || now,
+              updatedAt: now
+            }
+          }
+        : t
+    )
+    
+    updateDailyTask(currentTask.id, { tasks: updatedTasks })
+    setEditingNoteTaskId(null)
+  }
+
+  // 获取正在编辑的任务
+  const editingTask = editingNoteTaskId 
+    ? currentTask?.tasks.find(t => t.id === editingNoteTaskId) 
+    : null
 
   if (!currentPlan) {
     return (
@@ -740,6 +797,7 @@ export default function DailyStudy() {
                   onToggleComplete={() => handleToggleTask(task.id)}
                   onToggleDeliverable={() => handleToggleDeliverable(task.id)}
                   onRegenerate={() => handleOpenRegenerateModal(task.id)}
+                  onOpenNote={() => setEditingNoteTaskId(task.id)}
                   isRegenerating={regeneratingTaskId === task.id}
                   disabled={isReviewed}
                 />
@@ -788,6 +846,16 @@ export default function DailyStudy() {
             ? currentTask?.tasks.find(t => t.id === pendingRegenerateTaskId)?.title 
             : undefined}
         />
+
+        {/* 笔记编辑器 */}
+        {editingTask && (
+          <NoteEditor
+            note={editingTask.note}
+            taskTitle={editingTask.title}
+            onSave={(content) => handleSaveNote(editingTask.id, content)}
+            onClose={() => setEditingNoteTaskId(null)}
+          />
+        )}
       </div>
     </div>
   )
