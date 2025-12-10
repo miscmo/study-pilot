@@ -1,0 +1,72 @@
+name: Bug Report
+description: 报告一个 Bug
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你花时间填写这个 Bug 报告！
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 清晰简洁地描述这个 Bug
+      placeholder: 描述你遇到的问题...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 描述如何复现这个问题
+      placeholder: |
+        1. 打开应用
+        2. 点击 '...'
+        3. 滚动到 '...'
+        4. 看到错误
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 描述你期望发生的事情
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 应用版本
+      description: 你使用的 StudyPilot 版本
+      placeholder: "v1.0.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志信息
+      description: 如果有相关日志，请粘贴在这里
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图
+      description: 如果适用，添加截图来帮助解释问题
