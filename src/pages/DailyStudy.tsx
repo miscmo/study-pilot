@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useStore } from '../store/useStore'
 import { aiService } from '../services/aiService'
 import type { DailyTask, TaskItem, TaskNote, Resource, Deliverable } from '../types'
@@ -371,13 +371,96 @@ function NotePanel({
   const [content, setContent] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
   const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false)
-  const { settings } = useStore()
+  const [isSaving, setIsSaving] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
+  const { settings, updateSettings } = useStore()
+  
+  // 编辑器预览模式
+  const previewMode = settings.editorPreviewMode || 'live'
+  
+  // 引用
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const prevTaskIdRef = useRef<string | null>(null)
+  const editorContainerRef = useRef<HTMLDivElement | null>(null)
+  const generatingForTaskIdRef = useRef<string | null>(null)
+
+  // 监听编辑器预览模式变化
+  useEffect(() => {
+    const container = editorContainerRef.current
+    if (!container) return
+
+    const observer = new MutationObserver(() => {
+      const editorEl = container.querySelector('.w-md-editor')
+      if (!editorEl) return
+      
+      let detectedMode: 'edit' | 'live' | 'preview' = 'live'
+      if (editorEl.classList.contains('w-md-editor-show-edit')) {
+        detectedMode = 'edit'
+      } else if (editorEl.classList.contains('w-md-editor-show-preview')) {
+        detectedMode = 'preview'
+      } else if (editorEl.classList.contains('w-md-editor-show-live')) {
+        detectedMode = 'live'
+      }
+      
+      if (detectedMode !== previewMode) {
+        updateSettings({ editorPreviewMode: detectedMode })
+      }
+    })
+
+    observer.observe(container, { 
+      subtree: true, 
+      attributes: true, 
+      attributeFilter: ['class'] 
+    })
+
+    return () => observer.disconnect()
+  }, [previewMode])
+
+  // 加载任务内容的函数
+  const loadTaskContent = useCallback((taskItem: TaskItem) => {
+    // 清理之前的定时器
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+      autoSaveTimerRef.current = null
+    }
+    
+    // 检查是否已有笔记内容（非空）
+    if (taskItem.note?.content && taskItem.note.content.trim().length > 0) {
+      setContent(taskItem.note.content)
+      setHasChanges(false)
+      setLastSavedAt(taskItem.note.updatedAt ? new Date(taskItem.note.updatedAt) : null)
+    } else {
+      // 没有笔记，生成智能模板
+      setContent(getDefaultTemplate(taskItem.title))
+      setLastSavedAt(null)
+      setHasChanges(false)
+      
+      // 记录正在为哪个任务生成模板
+      generatingForTaskIdRef.current = taskItem.id
+      generateSmartTemplate(taskItem).then(template => {
+        // 确保还是同一个任务
+        if (generatingForTaskIdRef.current === taskItem.id && prevTaskIdRef.current === taskItem.id) {
+          setContent(template)
+        }
+      })
+    }
+  }, [settings.apiKey])
+
+  // 执行保存
+  const doSave = (taskId: string, noteContent: string) => {
+    if (!noteContent.trim()) return
+    setIsSaving(true)
+    onSave(taskId, noteContent)
+    setHasChanges(false)
+    setLastSavedAt(new Date())
+    setTimeout(() => setIsSaving(false), 500)
+  }
 
   // 生成智能模板
   const generateSmartTemplate = async (taskItem: TaskItem) => {
     if (!settings.apiKey) {
       // 如果没有 API Key，使用简单模板
-      return `# ${taskItem.title}
+      const template = `# ${taskItem.title}
 
 ## 学习目标
 
@@ -401,6 +484,9 @@ function NotePanel({
 
 > 
 `
+      // 自动保存模板
+      doSave(taskItem.id, template)
+      return template
     }
 
     setIsGeneratingTemplate(true)
@@ -412,11 +498,13 @@ function NotePanel({
         taskItem.deliverable.description,
         taskItem.deliverable.type
       )
+      // AI生成模板后自动保存
+      doSave(taskItem.id, template)
       return template
     } catch (err) {
       console.error('生成模板失败:', err)
       // 失败时返回基础模板
-      return `# ${taskItem.title}
+      const fallbackTemplate = `# ${taskItem.title}
 
 ## 学习目标
 
@@ -434,39 +522,63 @@ function NotePanel({
 
 > 
 `
+      doSave(taskItem.id, fallbackTemplate)
+      return fallbackTemplate
     } finally {
       setIsGeneratingTemplate(false)
     }
   }
 
+  // 切换任务时加载内容 - 只在任务ID真正变化时触发
   useEffect(() => {
-    if (task) {
-      if (task.note?.content) {
-        // 已有笔记，直接使用
-        setContent(task.note.content)
-        setHasChanges(false)
-      } else {
-        // 没有笔记，生成智能模板
-        setContent(getDefaultTemplate(task.title))
-        generateSmartTemplate(task).then(template => {
-          setContent(template)
-        })
-        setHasChanges(false)
+    if (!task) {
+      prevTaskIdRef.current = null
+      return
+    }
+    
+    // 检查是否是真正的任务切换
+    if (prevTaskIdRef.current === task.id) {
+      return // 同一个任务，不重新加载
+    }
+    
+    // 更新前一个任务ID
+    prevTaskIdRef.current = task.id
+    
+    // 加载新任务的内容
+    loadTaskContent(task)
+  }, [task?.id, loadTaskContent])
+
+  // 检测变化并触发自动保存
+  useEffect(() => {
+    if (task && !isGeneratingTemplate && prevTaskIdRef.current === task.id) {
+      const originalContent = task.note?.content || ''
+      const changed = content !== originalContent && content.trim() !== ''
+      setHasChanges(changed)
+      
+      // 有变化时启动自动保存（2秒防抖）
+      if (changed) {
+        if (autoSaveTimerRef.current) {
+          clearTimeout(autoSaveTimerRef.current)
+        }
+        autoSaveTimerRef.current = setTimeout(() => {
+          doSave(task.id, content)
+        }, 2000)
       }
     }
-  }, [task?.id])
-
-  useEffect(() => {
-    if (task && !isGeneratingTemplate) {
-      const originalContent = task.note?.content || ''
-      setHasChanges(content !== originalContent && content.trim() !== '')
+    
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
     }
   }, [content, task, isGeneratingTemplate])
 
   const handleSave = () => {
     if (task) {
-      onSave(task.id, content)
-      setHasChanges(false)
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+      doSave(task.id, content)
     }
   }
 
@@ -501,9 +613,20 @@ function NotePanel({
               生成模板中
             </span>
           )}
-          {hasChanges && !isGeneratingTemplate && (
+          {isSaving && !isGeneratingTemplate && (
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full flex-shrink-0 flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              保存中
+            </span>
+          )}
+          {hasChanges && !isGeneratingTemplate && !isSaving && (
             <span className="px-2 py-0.5 bg-yellow-100 text-yellow-600 text-xs rounded-full flex-shrink-0">
-              未保存
+              自动保存中...
+            </span>
+          )}
+          {!hasChanges && !isGeneratingTemplate && !isSaving && lastSavedAt && (
+            <span className="text-xs text-gray-400 flex-shrink-0">
+              已保存
             </span>
           )}
         </div>
@@ -522,7 +645,7 @@ function NotePanel({
           </button>
           <button
             onClick={handleSave}
-            disabled={!hasChanges || isGeneratingTemplate}
+            disabled={!hasChanges || isGeneratingTemplate || isSaving}
             className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white text-sm rounded-lg hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Save className="w-4 h-4" />
@@ -532,12 +655,12 @@ function NotePanel({
       </div>
 
       {/* 编辑器 */}
-      <div className="flex-1 overflow-hidden" data-color-mode="light">
+      <div ref={editorContainerRef} className="flex-1 overflow-hidden" data-color-mode="light">
         <MDEditor
           value={content}
           onChange={(val) => setContent(val || '')}
           height="100%"
-          preview="live"
+          preview={previewMode}
           hideToolbar={false}
           enableScroll={true}
           visibleDragbar={false}
@@ -775,14 +898,21 @@ export default function DailyStudy() {
     t => t.planId === currentPlanId && t.day === selectedDay
   )
   
-  const currentTask = rawCurrentTask ? {
-    ...rawCurrentTask,
-    tasks: rawCurrentTask.tasks.map((t, i) => normalizeTask(t, i))
-  } : undefined
+  // 使用 useMemo 稳定 currentTask 的引用，避免不必要的重新渲染
+  const currentTask = useMemo(() => {
+    if (!rawCurrentTask) return undefined
+    return {
+      ...rawCurrentTask,
+      tasks: rawCurrentTask.tasks.map((t, i) => normalizeTask(t, i))
+    }
+  }, [rawCurrentTask])
 
   const previousDayTask = dailyTasks.find(
     t => t.planId === currentPlanId && t.day === selectedDay - 1
   )
+
+  // 获取当前选中的任务 - 直接计算，不使用 useMemo 避免缓存问题
+  const selectedTask = currentTask?.tasks.find(t => t.id === selectedTaskId) || null
 
   // 默认选中第一个任务
   useEffect(() => {
@@ -794,8 +924,6 @@ export default function DailyStudy() {
       }
     }
   }, [currentTask?.id])
-
-  const selectedTask = currentTask?.tasks.find(t => t.id === selectedTaskId) || null
 
   const handleGenerateTask = async () => {
     if (!currentPlan || !settings.apiKey) {

@@ -111,4 +111,5 @@ export interface AppSettings {
   language: 'zh' | 'en'
   apiKeys: ApiKeyConfig[]
   activeKeyId: string | null
+  editorPreviewMode: 'edit' | 'live' | 'preview'  // 编辑器预览模式
 }

@@ -121,7 +121,8 @@ export const useStore = create<AppState>()(
         model: 'gpt-4',
         language: 'zh',
         apiKeys: [],
-        activeKeyId: null
+        activeKeyId: null,
+        editorPreviewMode: 'live'
       },
       updateSettings: (settingsUpdate) => set((state) => ({
         settings: { ...state.settings, ...settingsUpdate }

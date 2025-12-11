@@ -22,7 +22,7 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
-    mainWindow.webContents.openDevTools()
+    // 不自动打开开发者工具，需要时可按 Cmd+Option+I (Mac) 或 F12 (Windows) 手动打开
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
