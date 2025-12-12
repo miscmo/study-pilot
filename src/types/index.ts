@@ -8,6 +8,7 @@ export interface StudyPlan {
   startDate: string
   outline: StudyOutlineItem[]
   createdAt: string
+  lastUpdated?: string
   status: 'active' | 'completed' | 'paused'
   // GitHub 集成
   storageType: 'local' | 'github'
@@ -40,6 +41,7 @@ export interface DailyTask {
   submission?: TaskSubmission
   review?: TaskReview
   nextDayPlan?: string
+  lastUpdated?: string
 }
 
 // 具体任务项（包含该任务的资源和验收成果）
@@ -119,6 +121,14 @@ export interface GitHubSettings {
     name: string | null
     avatar_url: string
   } | null
+  // 同步配置
+  sync: {
+    enabled: boolean
+    repo: string // 同步专用仓库名称
+    autoSync: boolean // 是否自动同步
+    lastSync: string | null // 上次同步时间
+    syncDirection: 'push' | 'pull' | 'both' // 同步方向
+  }
 }
 
 // 应用设置
@@ -133,4 +143,18 @@ export interface AppSettings {
   aiMode: 'api' | 'manual'  // AI模式：API自动模式 / 手动复制粘贴模式
   // GitHub 集成
   github: GitHubSettings
+}
+
+// 同步数据结构
+export interface SyncData {
+  version: string
+  lastUpdated: string
+  settings: AppSettings
+  plans: StudyPlan[]
+  dailyTasks: DailyTask[]
+  syncInfo: {
+    deviceName: string
+    userId: string
+    syncTimestamp: string
+  }
 }

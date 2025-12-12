@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store/useStore'
 import { aiService } from './services/aiService'
+import { syncService } from './services/syncService'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -22,6 +23,36 @@ function App() {
       model: settings.model
     })
   }, [settings.apiKey, settings.apiEndpoint, settings.model])
+
+  // 应用启动时的自动同步
+  useEffect(() => {
+    const autoSync = async () => {
+      if (settings.github?.token && settings.github.sync?.enabled) {
+        try {
+          await syncService.sync()
+        } catch (error) {
+          console.error('自动同步失败:', error)
+        }
+      }
+    }
+
+    autoSync()
+  }, [])
+
+  // 当 GitHub 同步配置变化时，尝试同步
+  useEffect(() => {
+    const handleSyncConfigChange = async () => {
+      if (settings.github?.token && settings.github.sync?.enabled) {
+        try {
+          await syncService.sync()
+        } catch (error) {
+          console.error('同步配置变更后同步失败:', error)
+        }
+      }
+    }
+
+    handleSyncConfigChange()
+  }, [settings.github?.sync?.enabled, settings.github?.sync?.repo, settings.github?.sync?.syncDirection])
 
   const renderContent = () => {
     switch (currentView) {

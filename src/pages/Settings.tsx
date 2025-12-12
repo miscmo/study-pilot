@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import type { ApiKeyConfig } from '../types'
 import { githubService } from '../services/githubService'
+import { syncService } from '../services/syncService'
 import { 
   Key, 
   Globe, 
@@ -21,7 +22,8 @@ import {
   Github,
   LogOut,
   ExternalLink,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react'
 
 // Electron IPC
@@ -181,7 +183,7 @@ export default function Settings() {
       const user = await githubService.getCurrentUser()
 
       if (user) {
-        // 保存到设置
+        // 保存到设置，首次登录时自动启用同步功能
         updateSettings({
           github: {
             accessToken: githubToken,
@@ -190,17 +192,43 @@ export default function Settings() {
               login: user.login,
               name: user.name,
               avatar_url: user.avatar_url
+            },
+            sync: {
+              enabled: true,
+              repo: 'studypilot-sync',
+              autoSync: true,
+              syncDirection: 'both',
+              lastSync: null
             }
           }
         })
+        
+        // 立即初始化并执行同步
+        const initializeResult = await syncService.initializeSync()
+        if (initializeResult.success) {
+          const syncResult = await syncService.sync(true)
+          if (!syncResult.success) {
+            setGithubError(`同步执行失败: ${syncResult.error || '未知错误'}`)
+          }
+        } else {
+          setGithubError(`同步初始化失败: ${initializeResult.error || '未知错误'}`)
+        }
+        
         setGithubToken('')
-        setGithubError('')
       } else {
-        setGithubError('Token 验证失败，请检查是否正确')
+        setGithubError('Token 验证失败，请检查是否正确，需要 repo 权限')
         githubService.setConfig({ accessToken: null })
       }
     } catch (error) {
-      setGithubError('连接失败: ' + (error instanceof Error ? error.message : String(error)))
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      // 特殊处理权限错误
+      if (errorMsg.includes('403') || errorMsg.includes('permission')) {
+        setGithubError('GitHub Token 权限不足，请确保拥有 repo 权限')
+      } else if (errorMsg.includes('401')) {
+        setGithubError('GitHub Token 无效，请检查后重新输入')
+      } else {
+        setGithubError('连接失败: ' + errorMsg)
+      }
       githubService.setConfig({ accessToken: null })
     } finally {
       setGithubLoading(false)
@@ -391,6 +419,154 @@ export default function Settings() {
                   <li>✓ 评审结果自动记录</li>
                   <li>✓ 学习进度可视化展示</li>
                 </ul>
+              </div>
+
+              {/* 同步配置 */}
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <h4 className="font-medium text-blue-800 mb-3 flex items-center gap-2">
+                  <div className="p-1 bg-blue-100 rounded-full">
+                    <RefreshCw className="w-4 h-4 text-blue-600" />
+                  </div>
+                  数据同步设置
+                </h4>
+                
+                <div className="space-y-4">
+                  {/* 启用同步 */}
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.github.sync?.enabled || false}
+                        onChange={(e) => {
+                          updateSettings({
+                            github: {
+                              ...settings.github,
+                              sync: {
+                                ...settings.github.sync,
+                                enabled: e.target.checked
+                              }
+                            }
+                          })
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">启用数据同步</span>
+                    </label>
+                  </div>
+                  
+                  {/* 同步仓库名称 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      同步仓库名称
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.github.sync?.repo || 'studypilot-sync'}
+                      onChange={(e) => {
+                        updateSettings({
+                          github: {
+                            ...settings.github,
+                            sync: {
+                              ...settings.github.sync,
+                              repo: e.target.value
+                            }
+                          }
+                        })
+                      }}
+                      placeholder="studypilot-sync"
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={!(settings.github.sync?.enabled || false)}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      用于存储同步数据的私有仓库名称
+                    </p>
+                  </div>
+                  
+                  {/* 自动同步 */}
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.github.sync?.autoSync || false}
+                        onChange={(e) => {
+                          updateSettings({
+                            github: {
+                              ...settings.github,
+                              sync: {
+                                ...settings.github.sync,
+                                autoSync: e.target.checked
+                              }
+                            }
+                          })
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        disabled={!(settings.github.sync?.enabled || false)}
+                      />
+                      <span className="text-sm text-gray-700">自动同步</span>
+                    </label>
+                  </div>
+                  
+                  {/* 同步方向 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      同步方向
+                    </label>
+                    <select
+                      value={settings.github.sync?.syncDirection || 'both'}
+                      onChange={(e) => {
+                        updateSettings({
+                          github: {
+                            ...settings.github,
+                            sync: {
+                              ...settings.github.sync,
+                              syncDirection: e.target.value
+                            }
+                          }
+                        })
+                      }}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={!(settings.github.sync?.enabled || false)}
+                    >
+                      <option value="both">双向同步</option>
+                      <option value="push">仅推送到云端</option>
+                      <option value="pull">仅从云端拉取</option>
+                    </select>
+                  </div>
+                  
+                  {/* 上次同步时间 */}
+                  {settings.github.sync?.lastSync && (
+                    <div className="text-sm text-gray-500">
+                      上次同步: {new Date(settings.github.sync.lastSync).toLocaleString('zh-CN')}
+                    </div>
+                  )}
+                  
+                  {/* 手动同步按钮 */}
+                  <button
+                    onClick={async () => {
+                      setGithubLoading(true)
+                      setGithubError('')
+                      const syncResult = await syncService.sync(true)
+                      if (!syncResult.success) {
+                        setGithubError(`同步失败: ${syncResult.error || '未知错误'}`)
+                      }
+                      setGithubLoading(false)
+                    }}
+                    disabled={!(settings.github.sync?.enabled || false) || githubLoading}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {githubLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        同步中...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4" />
+                        立即同步
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

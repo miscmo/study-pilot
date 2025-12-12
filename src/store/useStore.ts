@@ -94,9 +94,13 @@ export const useStore = create<AppState>()(
       // 学习计划
       plans: [],
       currentPlanId: null,
-      addPlan: (plan) => set((state) => ({ plans: [...state.plans, plan] })),
+      addPlan: (plan) => set((state) => ({
+        plans: [...state.plans, { ...plan, lastUpdated: new Date().toISOString() }]
+      })),
       updatePlan: (id, planUpdate) => set((state) => ({
-        plans: state.plans.map((p) => p.id === id ? { ...p, ...planUpdate } : p)
+        plans: state.plans.map((p) => 
+          p.id === id ? { ...p, ...planUpdate, lastUpdated: new Date().toISOString() } : p
+        )
       })),
       deletePlan: (id) => set((state) => ({
         plans: state.plans.filter((p) => p.id !== id),
@@ -106,9 +110,13 @@ export const useStore = create<AppState>()(
       
       // 每日任务
       dailyTasks: [],
-      addDailyTask: (task) => set((state) => ({ dailyTasks: [...state.dailyTasks, task] })),
+      addDailyTask: (task) => set((state) => ({
+        dailyTasks: [...state.dailyTasks, { ...task, lastUpdated: new Date().toISOString() }]
+      })),
       updateDailyTask: (id, taskUpdate) => set((state) => ({
-        dailyTasks: state.dailyTasks.map((t) => t.id === id ? { ...t, ...taskUpdate } : t)
+        dailyTasks: state.dailyTasks.map((t) => 
+          t.id === id ? { ...t, ...taskUpdate, lastUpdated: new Date().toISOString() } : t
+        )
       })),
       getDailyTaskByPlanAndDay: (planId, day) => {
         return get().dailyTasks.find((t) => t.planId === planId && t.day === day)
@@ -127,7 +135,14 @@ export const useStore = create<AppState>()(
         github: {
           accessToken: null,
           clientId: '',
-          user: null
+          user: null,
+          sync: {
+            enabled: false,
+            repo: 'studypilot-sync',
+            autoSync: true,
+            lastSync: null,
+            syncDirection: 'both'
+          }
         }
       },
       updateSettings: (settingsUpdate) => set((state) => ({

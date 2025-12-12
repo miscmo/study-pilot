@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, safeStorage, shell, Menu } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 
@@ -91,6 +91,7 @@ function createWindow() {
       contextIsolation: false,
     },
     titleBarStyle: 'hiddenInset',
+    frame: false, // 隐藏Windows系统默认标题栏
     show: false,
   })
 
@@ -280,6 +281,9 @@ ipcMain.handle('open-external', async (_event, { url }) => {
 })
 
 app.whenReady().then(() => {
+  // 隐藏默认的应用菜单
+  Menu.setApplicationMenu(null)
+  
   // 先执行数据迁移
   migrateDataIfNeeded()
   // 再创建窗口

@@ -3,7 +3,7 @@
  * 处理 OAuth 授权、仓库操作、文件提交等
  */
 
-import type { StudyPlan, DailyTask, TaskItem } from '../types'
+import type { StudyPlan, DailyTask, TaskItem, SyncData, AppSettings } from '../types'
 
 // GitHub OAuth 配置
 // 注意：实际使用时需要创建自己的 GitHub OAuth App
@@ -100,9 +100,9 @@ class GitHubService {
     name: string,
     description: string,
     isPrivate: boolean = false
-  ): Promise<GitHubRepo | null> {
+  ): Promise<{ success: boolean; error?: string; data?: GitHubRepo }> {
     if (!this.accessToken) {
-      throw new Error('Not authenticated')
+      return { success: false, error: 'GitHub令牌无效或未提供' }
     }
 
     try {
@@ -118,14 +118,17 @@ class GitHubService {
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to create repository')
+        const errorData = await response.json().catch(() => ({ message: '创建仓库失败' }))
+        const errorMsg = errorData.message || `创建仓库失败: HTTP ${response.status}`
+        return { success: false, error: errorMsg }
       }
 
-      return await response.json()
+      const repoData = await response.json()
+      return { success: true, data: repoData }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '创建仓库时发生网络错误'
       console.error('Failed to create repository:', error)
-      throw error
+      return { success: false, error: errorMsg }
     }
   }
 
@@ -166,9 +169,9 @@ class GitHubService {
     content: string,
     message: string,
     sha?: string // 如果更新现有文件，需要提供 sha
-  ): Promise<boolean> {
+  ): Promise<{ success: boolean; error?: string }> {
     if (!this.accessToken) {
-      throw new Error('Not authenticated')
+      return { success: false, error: 'GitHub令牌无效或未提供' }
     }
 
     try {
@@ -200,14 +203,16 @@ class GitHubService {
       )
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'Failed to create/update file')
+        const errorData = await response.json().catch(() => ({ message: '创建/更新文件失败' }))
+        const errorMsg = errorData.message || `创建/更新文件失败: HTTP ${response.status}`
+        return { success: false, error: errorMsg }
       }
 
-      return true
+      return { success: true }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '创建/更新文件时发生网络错误'
       console.error('Failed to create/update file:', error)
-      throw error
+      return { success: false, error: errorMsg }
     }
   }
 
@@ -524,6 +529,197 @@ class GitHubService {
       Accept: 'application/vnd.github.v3+json',
       Authorization: `Bearer ${this.accessToken}`,
       'Content-Type': 'application/json',
+    }
+  }
+
+  /**
+   * 初始化同步专用仓库
+   */
+  async initializeSyncRepo(owner: string, repoName: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.accessToken) {
+      return { success: false, error: 'GitHub令牌无效或未提供' }
+    }
+
+    try {
+      // 检查仓库是否已存在
+      const existingRepo = await this.getRepository(owner, repoName)
+      if (existingRepo) {
+        return { success: true }
+      }
+
+      // 创建同步专用仓库
+      const repoResult = await this.createRepository(
+        repoName,
+        '🔄 StudyPilot 同步数据仓库',
+        true // 设置为私有仓库
+      )
+
+      if (repoResult.success && repoResult.data) {
+        // 创建初始同步文件结构
+        const initialSyncData: SyncData = {
+          version: '1.0.0',
+          lastUpdated: new Date().toISOString(),
+          settings: { /* 默认设置 */ } as AppSettings,
+          plans: [],
+          dailyTasks: [],
+          syncInfo: {
+            deviceName: `Device-${Date.now()}`,
+            userId: owner,
+            syncTimestamp: new Date().toISOString()
+          }
+        }
+
+        // 创建 sync.json 文件
+        const syncFileResult = await this.createOrUpdateFile(
+          owner,
+          repoName,
+          'sync.json',
+          JSON.stringify(initialSyncData, null, 2),
+          '🚀 初始化同步数据'
+        )
+        if (!syncFileResult.success) {
+          return { success: false, error: `创建同步文件失败: ${syncFileResult.error || '未知错误'}` }
+        }
+
+        // 创建 README 文件
+        const readmeContent = `# StudyPilot Sync
+
+🔄 这是 StudyPilot 应用的同步数据仓库
+
+请不要手动修改此仓库中的文件，这可能会导致同步问题。
+
+## 文件说明
+
+- 'sync.json': 包含所有应用配置、学习计划和任务数据
+
+## 安全注意事项
+
+- 此仓库包含您的应用设置和学习数据
+- 建议将仓库设置为私有
+- 定期备份重要数据`
+
+        const readmeResult = await this.createOrUpdateFile(
+          owner,
+          repoName,
+          'README.md',
+          readmeContent,
+          '📝 添加 README 文件'
+        )
+        if (!readmeResult.success) {
+          return { success: false, error: `创建 README 文件失败: ${readmeResult.error || '未知错误'}` }
+        }
+
+        return { success: true }
+      } else {
+        return { success: false, error: repoResult.error || '创建仓库失败' }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '初始化仓库失败'
+      console.error('Failed to initialize sync repo:', error)
+      return { success: false, error: errorMsg }
+    }
+  }
+
+  /**
+   * 同步数据到 GitHub
+   */
+  async syncToGitHub(syncData: SyncData): Promise<{ success: boolean; error?: string }> {
+    if (!this.accessToken) {
+      return { success: false, error: 'GitHub令牌无效或未提供' }
+    }
+
+    if (!syncData.settings.github?.user?.login) {
+      return { success: false, error: 'GitHub用户信息未找到' }
+    }
+
+    const owner = syncData.settings.github.user.login
+    const repoName = syncData.settings.github.sync.repo
+
+    try {
+      // 确保仓库存在
+      const repoResult = await this.initializeSyncRepo(owner, repoName)
+      if (!repoResult.success) {
+        return { success: false, error: `确保仓库存在失败: ${repoResult.error}` }
+      }
+
+      // 更新同步时间戳
+      syncData.lastUpdated = new Date().toISOString()
+      syncData.syncInfo.syncTimestamp = new Date().toISOString()
+
+      // 提交同步数据
+      const fileResult = await this.createOrUpdateFile(
+        owner,
+        repoName,
+        'sync.json',
+        JSON.stringify(syncData, null, 2),
+        `🔄 同步数据更新 - ${new Date().toLocaleString()}`
+      )
+
+      if (!fileResult.success) {
+        return { success: false, error: `提交同步数据失败: ${fileResult.error}` }
+      }
+
+      return { success: true }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '同步数据到GitHub失败'
+      console.error('Failed to sync data to GitHub:', error)
+      return { success: false, error: errorMsg }
+    }
+  }
+
+  /**
+   * 从 GitHub 同步数据
+   */
+  async syncFromGitHub(owner: string, repoName: string): Promise<{ success: boolean; error?: string; data?: SyncData }> {
+    if (!this.accessToken) {
+      return { success: false, error: 'GitHub令牌无效或未提供' }
+    }
+
+    try {
+      // 获取同步文件
+      const syncFile = await this.getFile(owner, repoName, 'sync.json')
+      if (!syncFile || !syncFile.content) {
+        return { success: false, error: '同步文件不存在或内容为空' }
+      }
+
+      // 解码内容
+      try {
+        const content = syncFile.content
+        const syncData: SyncData = JSON.parse(content)
+        return { success: true, data: syncData }
+      } catch (parseError) {
+        const errorMsg = parseError instanceof Error ? parseError.message : '解析同步数据失败'
+        return { success: false, error: `解析同步数据失败: ${errorMsg}` }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '从GitHub获取同步数据失败'
+      console.error('Failed to sync data from GitHub:', error)
+      return { success: false, error: errorMsg }
+    }
+  }
+
+  /**
+   * 获取仓库信息
+   */
+  async getRepository(owner: string, repo: string): Promise<any | null> {
+    if (!this.accessToken) {
+      throw new Error('Not authenticated')
+    }
+
+    try {
+      const response = await fetch(
+        `${GITHUB_API_BASE}/repos/${owner}/${repo}`,
+        { headers: this.getHeaders() }
+      )
+
+      if (response.ok) {
+        return await response.json()
+      }
+
+      return null
+    } catch (error) {
+      console.error('Failed to get repository:', error)
+      return null
     }
   }
 
