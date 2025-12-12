@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store/useStore'
 import { aiService } from './services/aiService'
+import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
+import ErrorBoundary from './components/ErrorBoundary'
 import Home from './pages/Home'
 import PlanCreator from './pages/PlanCreator'
 import DailyStudy from './pages/DailyStudy'
@@ -19,7 +21,7 @@ function App() {
       apiEndpoint: settings.apiEndpoint,
       model: settings.model
     })
-  }, [settings])
+  }, [settings.apiKey, settings.apiEndpoint, settings.model])
 
   const renderContent = () => {
     switch (currentView) {
@@ -39,15 +41,22 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      <Sidebar 
-        collapsed={sidebarCollapsed} 
-        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
-      />
-      <main className="flex-1 overflow-auto">
-        {renderContent()}
-      </main>
-    </div>
+    <ErrorBoundary>
+      <div className="flex flex-col h-screen bg-gray-100">
+        <TitleBar />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar 
+            collapsed={sidebarCollapsed} 
+            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
+          />
+          <main className="flex-1 overflow-auto">
+            <ErrorBoundary>
+              {renderContent()}
+            </ErrorBoundary>
+          </main>
+        </div>
+      </div>
+    </ErrorBoundary>
   )
 }
 

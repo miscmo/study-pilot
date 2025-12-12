@@ -61,3 +61,478 @@ body {
 .markdown-content pre code { @apply bg-transparent text-gray-100; }
 .markdown-content blockquote { @apply border-l-4 border-primary-500 pl-4 italic text-gray-600 my-3; }
 .markdown-content a { @apply text-primary-600 hover:underline; }
+
+/* ==================== Markdown 编辑器优化样式 ==================== */
+
+/* 编辑器容器 */
+.w-md-editor {
+  border: none !important;
+  box-shadow: none !important;
+  background: #fafafa !important;
+}
+
+.w-md-editor-toolbar {
+  background: #f8f9fa !important;
+  border-bottom: 1px solid #e9ecef !important;
+  padding: 6px 12px !important;
+}
+
+.w-md-editor-toolbar ul > li > button {
+  color: #6b7280 !important;
+  border-radius: 4px !important;
+  transition: all 0.15s ease !important;
+}
+
+.w-md-editor-toolbar ul > li > button:hover {
+  background: #e5e7eb !important;
+  color: #374151 !important;
+}
+
+.w-md-editor-toolbar ul > li > button:active,
+.w-md-editor-toolbar ul > li > button.active {
+  background: #ddd6fe !important;
+  color: #7c3aed !important;
+}
+
+/* 编辑区域 */
+.w-md-editor-text-input,
+.w-md-editor-text-pre > code,
+.w-md-editor-text {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, 'Cascadia Code', Consolas, 'Liberation Mono', Menlo, monospace !important;
+  font-size: 14px !important;
+  line-height: 1.75 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.w-md-editor-text-input {
+  caret-color: #7c3aed !important;
+}
+
+/* 编辑器内容区 */
+.w-md-editor-content {
+  background: #fafafa !important;
+}
+
+.w-md-editor-area {
+  padding: 16px 20px !important;
+}
+
+/* 预览区域 */
+.w-md-editor-preview {
+  padding: 16px 24px !important;
+  background: #ffffff !important;
+}
+
+.wmde-markdown {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  font-size: 15px !important;
+  line-height: 1.7 !important;
+  color: #374151 !important;
+}
+
+.wmde-markdown h1 {
+  font-size: 1.75em !important;
+  font-weight: 700 !important;
+  margin-top: 1.5em !important;
+  margin-bottom: 0.75em !important;
+  padding-bottom: 0.3em !important;
+  border-bottom: 2px solid #e5e7eb !important;
+  color: #1f2937 !important;
+}
+
+.wmde-markdown h2 {
+  font-size: 1.4em !important;
+  font-weight: 600 !important;
+  margin-top: 1.25em !important;
+  margin-bottom: 0.6em !important;
+  color: #374151 !important;
+}
+
+.wmde-markdown h3 {
+  font-size: 1.2em !important;
+  font-weight: 600 !important;
+  margin-top: 1em !important;
+  margin-bottom: 0.5em !important;
+  color: #4b5563 !important;
+}
+
+.wmde-markdown p {
+  margin-bottom: 1em !important;
+}
+
+.wmde-markdown blockquote {
+  border-left: 4px solid #8b5cf6 !important;
+  background: linear-gradient(90deg, #f5f3ff 0%, transparent 100%) !important;
+  padding: 12px 16px !important;
+  margin: 1em 0 !important;
+  border-radius: 0 8px 8px 0 !important;
+  color: #6b7280 !important;
+}
+
+.wmde-markdown blockquote p {
+  margin-bottom: 0 !important;
+}
+
+.wmde-markdown code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, Consolas, monospace !important;
+  background: #f3f4f6 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-size: 0.9em !important;
+  color: #db2777 !important;
+}
+
+.wmde-markdown pre {
+  background: #1e1e1e !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+  margin: 1em 0 !important;
+  overflow-x: auto !important;
+}
+
+.wmde-markdown pre code {
+  background: transparent !important;
+  color: #d4d4d4 !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+.wmde-markdown ul,
+.wmde-markdown ol {
+  padding-left: 1.5em !important;
+  margin-bottom: 1em !important;
+}
+
+.wmde-markdown li {
+  margin-bottom: 0.4em !important;
+}
+
+.wmde-markdown ul > li {
+  list-style-type: disc !important;
+}
+
+.wmde-markdown ol > li {
+  list-style-type: decimal !important;
+}
+
+/* 任务列表样式 */
+.wmde-markdown ul.contains-task-list {
+  list-style: none !important;
+  padding-left: 0 !important;
+}
+
+.wmde-markdown li.task-list-item {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  padding: 6px 12px !important;
+  margin: 4px 0 !important;
+  background: #f9fafb !important;
+  border-radius: 6px !important;
+  border: 1px solid #e5e7eb !important;
+  transition: all 0.15s ease !important;
+}
+
+.wmde-markdown li.task-list-item:hover {
+  background: #f3f4f6 !important;
+  border-color: #d1d5db !important;
+}
+
+.wmde-markdown li.task-list-item input[type="checkbox"] {
+  width: 16px !important;
+  height: 16px !important;
+  margin-top: 3px !important;
+  accent-color: #8b5cf6 !important;
+  cursor: pointer !important;
+}
+
+.wmde-markdown a {
+  color: #7c3aed !important;
+  text-decoration: none !important;
+  border-bottom: 1px solid transparent !important;
+  transition: border-color 0.15s ease !important;
+}
+
+.wmde-markdown a:hover {
+  border-bottom-color: #7c3aed !important;
+}
+
+.wmde-markdown hr {
+  border: none !important;
+  height: 2px !important;
+  background: linear-gradient(90deg, #e5e7eb 0%, #d1d5db 50%, #e5e7eb 100%) !important;
+  margin: 2em 0 !important;
+}
+
+.wmde-markdown table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 1em 0 !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.wmde-markdown th {
+  background: #f3f4f6 !important;
+  font-weight: 600 !important;
+  text-align: left !important;
+  padding: 10px 12px !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+.wmde-markdown td {
+  padding: 10px 12px !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+.wmde-markdown tr:nth-child(even) {
+  background: #f9fafb !important;
+}
+
+/* 编辑区语法高亮增强 */
+.w-md-editor-text-pre > code {
+  color: #374151 !important;
+}
+
+/* 标题高亮 */
+.w-md-editor-text-pre > code .token.title {
+  color: #7c3aed !important;
+  font-weight: 600 !important;
+}
+
+/* 粗体 */
+.w-md-editor-text-pre > code .token.bold {
+  font-weight: 700 !important;
+  color: #1f2937 !important;
+}
+
+/* 斜体 */
+.w-md-editor-text-pre > code .token.italic {
+  font-style: italic !important;
+  color: #6b7280 !important;
+}
+
+/* 链接 */
+.w-md-editor-text-pre > code .token.url,
+.w-md-editor-text-pre > code .token.url-reference {
+  color: #2563eb !important;
+}
+
+/* 代码 */
+.w-md-editor-text-pre > code .token.code {
+  color: #db2777 !important;
+  background: rgba(219, 39, 119, 0.08) !important;
+  border-radius: 3px !important;
+  padding: 1px 4px !important;
+}
+
+/* 引用 */
+.w-md-editor-text-pre > code .token.blockquote {
+  color: #8b5cf6 !important;
+}
+
+/* 列表标记 */
+.w-md-editor-text-pre > code .token.list {
+  color: #f59e0b !important;
+}
+
+/* 分隔线 */
+.w-md-editor-text-pre > code .token.hr {
+  color: #9ca3af !important;
+}
+
+/* 编辑器分隔条 */
+.w-md-editor-bar {
+  background: #e5e7eb !important;
+}
+
+.w-md-editor-bar svg {
+  color: #9ca3af !important;
+}
+
+/* 全屏模式 */
+.w-md-editor-fullscreen {
+  z-index: 9999 !important;
+}
+
+/* 焦点状态 */
+.w-md-editor:focus-within {
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.1) !important;
+}
+
+/* 选中文本样式 */
+.w-md-editor-text-input::selection,
+.w-md-editor-text-pre > code::selection {
+  background: rgba(124, 58, 237, 0.2) !important;
+}
+
+/* 当前行高亮效果（通过渐变背景模拟） */
+.w-md-editor-text-input:focus {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    transparent calc(50% - 12px),
+    rgba(124, 58, 237, 0.03) calc(50% - 12px),
+    rgba(124, 58, 237, 0.03) calc(50% + 12px),
+    transparent calc(50% + 12px),
+    transparent 100%
+  ) !important;
+  background-attachment: local !important;
+}
+
+/* 占位符样式 */
+.w-md-editor-text-input::placeholder {
+  color: #9ca3af !important;
+  font-style: italic !important;
+  opacity: 0.7 !important;
+}
+
+/* 编辑器容器样式 */
+.editor-container {
+  position: relative;
+}
+
+.editor-container .w-md-editor {
+  height: calc(100% - 24px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.editor-container .w-md-editor-content {
+  flex: 1 !important;
+  min-height: 0 !important;
+}
+
+/* 工具栏按钮间距优化 */
+.w-md-editor-toolbar ul > li {
+  margin: 0 1px !important;
+}
+
+.w-md-editor-toolbar ul > li > button {
+  padding: 4px 6px !important;
+  min-width: 28px !important;
+  height: 28px !important;
+}
+
+/* 工具栏分隔线 */
+.w-md-editor-toolbar-divider {
+  background: #e5e7eb !important;
+  margin: 0 6px !important;
+}
+
+/* 编辑/预览切换按钮高亮 */
+.w-md-editor-toolbar ul > li.active > button,
+.w-md-editor-toolbar ul > li > button[data-name="preview"]:hover,
+.w-md-editor-toolbar ul > li > button[data-name="edit"]:hover,
+.w-md-editor-toolbar ul > li > button[data-name="live"]:hover {
+  background: #ede9fe !important;
+  color: #7c3aed !important;
+}
+
+/* 编辑区域滚动条 */
+.w-md-editor-area::-webkit-scrollbar,
+.w-md-editor-preview::-webkit-scrollbar {
+  width: 6px !important;
+  height: 6px !important;
+}
+
+.w-md-editor-area::-webkit-scrollbar-track,
+.w-md-editor-preview::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.w-md-editor-area::-webkit-scrollbar-thumb,
+.w-md-editor-preview::-webkit-scrollbar-thumb {
+  background: #d1d5db !important;
+  border-radius: 3px !important;
+}
+
+.w-md-editor-area::-webkit-scrollbar-thumb:hover,
+.w-md-editor-preview::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af !important;
+}
+
+/* 图片样式 */
+.wmde-markdown img {
+  max-width: 100% !important;
+  border-radius: 8px !important;
+  margin: 1em 0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* 强调文本 */
+.wmde-markdown strong {
+  font-weight: 600 !important;
+  color: #1f2937 !important;
+}
+
+.wmde-markdown em {
+  font-style: italic !important;
+  color: #6b7280 !important;
+}
+
+/* 删除线 */
+.wmde-markdown del {
+  color: #9ca3af !important;
+  text-decoration: line-through !important;
+}
+
+/* 键盘快捷键样式 */
+.wmde-markdown kbd {
+  display: inline-block !important;
+  padding: 2px 6px !important;
+  font-family: 'SF Mono', Monaco, Consolas, monospace !important;
+  font-size: 0.85em !important;
+  line-height: 1.4 !important;
+  color: #374151 !important;
+  background: #f3f4f6 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 4px !important;
+  box-shadow: 0 1px 0 #d1d5db !important;
+}
+
+/* 脚注样式 */
+.wmde-markdown .footnotes {
+  margin-top: 2em !important;
+  padding-top: 1em !important;
+  border-top: 1px solid #e5e7eb !important;
+  font-size: 0.9em !important;
+  color: #6b7280 !important;
+}
+
+/* 数学公式（如果支持） */
+.wmde-markdown .math {
+  font-family: 'KaTeX_Main', 'Times New Roman', serif !important;
+}
+
+/* 实时预览模式下的分隔线 */
+.w-md-editor-show-live .w-md-editor-area {
+  border-right: 1px solid #e5e7eb !important;
+}
+
+/* 只编辑模式 */
+.w-md-editor-show-edit .w-md-editor-area {
+  max-width: 100% !important;
+}
+
+/* 只预览模式 */
+.w-md-editor-show-preview .w-md-editor-preview {
+  max-width: 100% !important;
+}
+
+/* 打印样式 */
+@media print {
+  .w-md-editor-toolbar {
+    display: none !important;
+  }
+  
+  .w-md-editor-area {
+    display: none !important;
+  }
+  
+  .w-md-editor-preview {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+}

@@ -122,7 +122,13 @@ export const useStore = create<AppState>()(
         language: 'zh',
         apiKeys: [],
         activeKeyId: null,
-        editorPreviewMode: 'live'
+        editorPreviewMode: 'live',
+        aiMode: 'api',
+        github: {
+          accessToken: null,
+          clientId: '',
+          user: null
+        }
       },
       updateSettings: (settingsUpdate) => set((state) => ({
         settings: { ...state.settings, ...settingsUpdate }

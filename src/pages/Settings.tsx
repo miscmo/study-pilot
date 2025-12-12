@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '../store/useStore'
 import type { ApiKeyConfig } from '../types'
+import { githubService } from '../services/githubService'
 import { 
   Key, 
   Globe, 
@@ -14,8 +15,17 @@ import {
   Edit2,
   Power,
   PowerOff,
-  X
+  X,
+  Zap,
+  Hand,
+  Github,
+  LogOut,
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react'
+
+// Electron IPC
+const ipcRenderer = window.require ? window.require('electron').ipcRenderer : null
 
 export default function Settings() {
   const { 
@@ -44,6 +54,20 @@ export default function Settings() {
   })
   const [showKeyFormApiKey, setShowKeyFormApiKey] = useState(false)
   const [visibleKeyIds, setVisibleKeyIds] = useState<Set<string>>(new Set())
+  
+  // GitHub 相关状态
+  const githubClientId = settings.github?.clientId || ''
+  const [githubToken, setGithubToken] = useState('')
+  const [showGithubToken, setShowGithubToken] = useState(false)
+  const [githubLoading, setGithubLoading] = useState(false)
+  const [githubError, setGithubError] = useState('')
+
+  // 初始化 GitHub 服务配置
+  useEffect(() => {
+    if (settings.github?.accessToken) {
+      githubService.setConfig({ accessToken: settings.github.accessToken })
+    }
+  }, [settings.github?.accessToken])
 
   const handleSave = () => {
     updateSettings({
@@ -141,6 +165,70 @@ export default function Settings() {
     return key.slice(0, 4) + '••••••••' + key.slice(-4)
   }
 
+  // GitHub 登录（使用 Personal Access Token）
+  const handleGithubLogin = async () => {
+    if (!githubToken.trim()) {
+      setGithubError('请输入 GitHub Personal Access Token')
+      return
+    }
+
+    setGithubLoading(true)
+    setGithubError('')
+
+    try {
+      // 设置 token 并验证
+      githubService.setConfig({ accessToken: githubToken })
+      const user = await githubService.getCurrentUser()
+
+      if (user) {
+        // 保存到设置
+        updateSettings({
+          github: {
+            accessToken: githubToken,
+            clientId: githubClientId,
+            user: {
+              login: user.login,
+              name: user.name,
+              avatar_url: user.avatar_url
+            }
+          }
+        })
+        setGithubToken('')
+        setGithubError('')
+      } else {
+        setGithubError('Token 验证失败，请检查是否正确')
+        githubService.setConfig({ accessToken: null })
+      }
+    } catch (error) {
+      setGithubError('连接失败: ' + (error instanceof Error ? error.message : String(error)))
+      githubService.setConfig({ accessToken: null })
+    } finally {
+      setGithubLoading(false)
+    }
+  }
+
+  // GitHub 登出
+  const handleGithubLogout = () => {
+    githubService.logout()
+    updateSettings({
+      github: {
+        accessToken: null,
+        clientId: githubClientId,
+        user: null
+      }
+    })
+  }
+
+  // 打开 GitHub Token 创建页面
+  const openGithubTokenPage = async () => {
+    const url = 'https://github.com/settings/tokens/new?scopes=repo,user:email&description=StudyPilot'
+    if (ipcRenderer) {
+      await ipcRenderer.invoke('open-external', { url })
+    } else {
+      window.open(url, '_blank')
+    }
+  }
+
   const presetEndpoints = [
     { label: 'OpenAI', value: 'https://api.openai.com/v1' },
     { label: '智谱AI', value: 'https://open.bigmodel.cn/api/paas/v4' },
@@ -186,6 +274,197 @@ export default function Settings() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">设置</h1>
           <p className="text-gray-500">配置 AI 服务和应用偏好</p>
+        </div>
+
+        {/* AI 模式选择 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-4">AI 模式</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={() => updateSettings({ aiMode: 'api' })}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${
+                settings.aiMode !== 'manual'
+                  ? 'border-primary-500 bg-primary-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`p-2 rounded-lg ${
+                  settings.aiMode !== 'manual' ? 'bg-primary-100' : 'bg-gray-100'
+                }`}>
+                  <Zap className={`w-5 h-5 ${
+                    settings.aiMode !== 'manual' ? 'text-primary-600' : 'text-gray-500'
+                  }`} />
+                </div>
+                <span className="font-bold text-gray-800">API 模式</span>
+              </div>
+              <p className="text-sm text-gray-500">
+                配置 API 密钥，全自动生成内容
+              </p>
+            </button>
+            
+            <button
+              onClick={() => updateSettings({ aiMode: 'manual' })}
+              className={`p-4 rounded-xl border-2 text-left transition-all ${
+                settings.aiMode === 'manual'
+                  ? 'border-primary-500 bg-primary-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`p-2 rounded-lg ${
+                  settings.aiMode === 'manual' ? 'bg-primary-100' : 'bg-gray-100'
+                }`}>
+                  <Hand className={`w-5 h-5 ${
+                    settings.aiMode === 'manual' ? 'text-primary-600' : 'text-gray-500'
+                  }`} />
+                </div>
+                <span className="font-bold text-gray-800">手动模式</span>
+              </div>
+              <p className="text-sm text-gray-500">
+                无需密钥，复制提示词到豆包/元宝
+              </p>
+            </button>
+          </div>
+          
+          {settings.aiMode === 'manual' && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-xl">
+              <h4 className="font-medium text-blue-800 mb-2">手动模式使用说明</h4>
+              <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                <li>点击生成按钮后，系统会弹出提示词并自动复制</li>
+                <li>将提示词粘贴到豆包、元宝或其他 AI 工具</li>
+                <li>复制 AI 的回复内容</li>
+                <li>粘贴回应用，系统会自动解析并应用</li>
+              </ol>
+            </div>
+          )}
+        </div>
+
+        {/* GitHub 集成 */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-gray-900 rounded-lg">
+              <Github className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-800">GitHub 集成</h2>
+              <p className="text-sm text-gray-500">将学习历程自动同步到 GitHub 仓库</p>
+            </div>
+          </div>
+
+          {settings.github?.user ? (
+            // 已登录状态
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-green-50 rounded-xl border border-green-200">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={settings.github.user.avatar_url}
+                    alt={settings.github.user.login}
+                    className="w-10 h-10 rounded-full"
+                  />
+                  <div>
+                    <div className="font-medium text-gray-800">
+                      {settings.github.user.name || settings.github.user.login}
+                    </div>
+                    <div className="text-sm text-gray-500">@{settings.github.user.login}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-1 text-xs bg-green-100 text-green-600 rounded-full">
+                    已连接
+                  </span>
+                  <button
+                    onClick={handleGithubLogout}
+                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    title="断开连接"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <h4 className="font-medium text-blue-800 mb-2">已启用功能</h4>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>✓ 创建学习计划时自动创建 GitHub 仓库</li>
+                  <li>✓ 每日学习成果自动提交到仓库</li>
+                  <li>✓ 评审结果自动记录</li>
+                  <li>✓ 学习进度可视化展示</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            // 未登录状态
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-50 rounded-xl">
+                <h4 className="font-medium text-gray-800 mb-2">连接 GitHub 后可以：</h4>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li>• 自动创建学习项目仓库</li>
+                  <li>• 每日学习成果自动 commit</li>
+                  <li>• 形成完整的学习作品集</li>
+                  <li>• GitHub 贡献图记录学习历程</li>
+                </ul>
+              </div>
+
+              {githubError && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  {githubError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Personal Access Token
+                </label>
+                <div className="relative">
+                  <input
+                    type={showGithubToken ? 'text' : 'password'}
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  />
+                  <button
+                    onClick={() => setShowGithubToken(!showGithubToken)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                  >
+                    {showGithubToken ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs text-gray-400">
+                    需要 repo 和 user:email 权限
+                  </p>
+                  <button
+                    onClick={openGithubTokenPage}
+                    className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                  >
+                    创建 Token
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={handleGithubLogin}
+                disabled={githubLoading || !githubToken.trim()}
+                className="w-full py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {githubLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    连接中...
+                  </>
+                ) : (
+                  <>
+                    <Github className="w-5 h-5" />
+                    连接 GitHub
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* API 密钥管理 */}

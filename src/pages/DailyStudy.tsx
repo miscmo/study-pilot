@@ -1,336 +1,25 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store/useStore'
 import { aiService } from '../services/aiService'
-import type { DailyTask, TaskItem, TaskNote, Resource, Deliverable } from '../types'
-import MDEditor from '@uiw/react-md-editor'
+import type { DailyTask, TaskItem } from '../types'
+import ManualModeModal from '../components/ManualModeModal'
+import TaskEditModal from '../components/TaskEditModal'
+import RegenerateModal from '../components/RegenerateModal'
+import TaskCard from '../components/TaskCard'
+import NotePanel from '../components/NotePanel'
 import { 
   Loader2, 
-  CheckCircle, 
-  Circle,
   Clock,
   BookOpen,
   FileText,
-  ExternalLink,
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
-  ChevronUp,
   RefreshCw,
-  X,
-  MessageSquare,
-  Target,
   Zap,
-  PenLine,
-  Save,
-  Edit2,
-  Plus,
-  Trash2
+  Edit2
 } from 'lucide-react'
 import { format } from 'date-fns'
-
-// 难度标签颜色
-const difficultyConfig = {
-  basic: { label: '基础', color: 'bg-green-100 text-green-600' },
-  intermediate: { label: '进阶', color: 'bg-yellow-100 text-yellow-600' },
-  advanced: { label: '挑战', color: 'bg-red-100 text-red-600' }
-}
-
-// 任务编辑弹窗组件
-function TaskEditModal({
-  task,
-  onSave,
-  onClose
-}: {
-  task: TaskItem
-  onSave: (updated: TaskItem) => void
-  onClose: () => void
-}) {
-  const [title, setTitle] = useState(task.title)
-  const [description, setDescription] = useState(task.description)
-  const [difficulty, setDifficulty] = useState(task.difficulty)
-  const [estimatedMinutes, setEstimatedMinutes] = useState(task.estimatedMinutes)
-  const [resources, setResources] = useState<Resource[]>(task.resources)
-  const [deliverableTitle, setDeliverableTitle] = useState(task.deliverable.title)
-  const [deliverableDesc, setDeliverableDesc] = useState(task.deliverable.description)
-  const [deliverableType, setDeliverableType] = useState(task.deliverable.type)
-
-  const handleSave = () => {
-    onSave({
-      ...task,
-      title,
-      description,
-      difficulty,
-      estimatedMinutes,
-      resources,
-      deliverable: {
-        ...task.deliverable,
-        title: deliverableTitle,
-        description: deliverableDesc,
-        type: deliverableType
-      }
-    })
-  }
-
-  const addResource = () => {
-    setResources([...resources, {
-      id: `resource-${Date.now()}`,
-      title: '',
-      type: 'article',
-      description: '',
-      url: ''
-    }])
-  }
-
-  const updateResource = (index: number, field: keyof Resource, value: string) => {
-    const updated = [...resources]
-    updated[index] = { ...updated[index], [field]: value }
-    setResources(updated)
-  }
-
-  const removeResource = (index: number) => {
-    setResources(resources.filter((_, i) => i !== index))
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-800">编辑任务</h3>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {/* 任务标题 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">任务标题</label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-
-          {/* 任务描述 */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">任务描述</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-            />
-          </div>
-
-          {/* 难度和时间 */}
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">难度</label>
-              <select
-                value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value as TaskItem['difficulty'])}
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-              >
-                <option value="basic">基础</option>
-                <option value="intermediate">进阶</option>
-                <option value="advanced">挑战</option>
-              </select>
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">预计时间（分钟）</label>
-              <input
-                type="number"
-                min="1"
-                value={estimatedMinutes}
-                onChange={(e) => setEstimatedMinutes(parseInt(e.target.value) || 20)}
-                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-          </div>
-
-          {/* 参考资料 */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">参考资料</label>
-              <button
-                onClick={addResource}
-                className="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1"
-              >
-                <Plus className="w-3 h-3" />
-                添加资料
-              </button>
-            </div>
-            <div className="space-y-2">
-              {resources.map((resource, index) => (
-                <div key={resource.id} className="p-3 bg-gray-50 rounded-lg space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={resource.title}
-                      onChange={(e) => updateResource(index, 'title', e.target.value)}
-                      placeholder="资料标题"
-                      className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                    <select
-                      value={resource.type}
-                      onChange={(e) => updateResource(index, 'type', e.target.value)}
-                      className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 bg-white"
-                    >
-                      <option value="article">文章</option>
-                      <option value="video">视频</option>
-                      <option value="book">书籍</option>
-                      <option value="documentation">文档</option>
-                      <option value="practice">练习</option>
-                    </select>
-                    <button
-                      onClick={() => removeResource(index)}
-                      className="p-1.5 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    value={resource.url || ''}
-                    onChange={(e) => updateResource(index, 'url', e.target.value)}
-                    placeholder="链接（可选）"
-                    className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-              ))}
-              {resources.length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-2">暂无参考资料</p>
-              )}
-            </div>
-          </div>
-
-          {/* 验收成果 */}
-          <div className="p-4 bg-blue-50 rounded-xl space-y-3">
-            <h4 className="text-sm font-medium text-blue-800">验收成果</h4>
-            <div>
-              <label className="block text-xs text-blue-600 mb-1">成果标题</label>
-              <input
-                type="text"
-                value={deliverableTitle}
-                onChange={(e) => setDeliverableTitle(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-blue-600 mb-1">成果描述</label>
-              <textarea
-                value={deliverableDesc}
-                onChange={(e) => setDeliverableDesc(e.target.value)}
-                rows={2}
-                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white resize-none"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-blue-600 mb-1">成果类型</label>
-              <select
-                value={deliverableType}
-                onChange={(e) => setDeliverableType(e.target.value as Deliverable['type'])}
-                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="note">笔记</option>
-                <option value="code">代码</option>
-                <option value="project">项目</option>
-                <option value="quiz">测验</option>
-                <option value="summary">总结</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSave}
-            className="flex-1 py-2.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl hover:shadow-lg flex items-center justify-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            保存
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// 重新生成弹窗组件
-function RegenerateModal({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  taskTitle
-}: { 
-  isOpen: boolean
-  onClose: () => void
-  onConfirm: (note: string) => void
-  taskTitle?: string
-}) {
-  const [note, setNote] = useState('')
-
-  if (!isOpen) return null
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fadeIn">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-800">
-            重新生成{taskTitle ? `「${taskTitle}」` : '全部任务'}
-          </h3>
-          <button 
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
-        </div>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <MessageSquare className="w-4 h-4 inline mr-1" />
-            备注说明（可选）
-          </label>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="告诉 AI 你希望怎样调整..."
-            rows={4}
-            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none"
-          />
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition-colors"
-          >
-            取消
-          </button>
-          <button
-            onClick={() => {
-              onConfirm(note)
-              setNote('')
-            }}
-            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all"
-          >
-            确认重新生成
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // 兼容旧数据结构的任务规范化函数
 function normalizeTask(task: TaskItem, index: number): TaskItem {
@@ -347,526 +36,6 @@ function normalizeTask(task: TaskItem, index: number): TaskItem {
       completed: false
     }
   }
-}
-
-// 默认笔记模板（仅作为后备）
-function getDefaultTemplate(taskTitle: string): string {
-  return `# ${taskTitle}
-
-## 学习要点
-
-> 正在生成智能模板...
-
-`
-}
-
-// 右侧笔记面板组件
-function NotePanel({
-  task,
-  onSave
-}: {
-  task: TaskItem | null
-  onSave: (taskId: string, content: string) => void
-}) {
-  const [content, setContent] = useState('')
-  const [hasChanges, setHasChanges] = useState(false)
-  const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
-  const { settings, updateSettings } = useStore()
-  
-  // 编辑器预览模式
-  const previewMode = settings.editorPreviewMode || 'live'
-  
-  // 引用
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const prevTaskIdRef = useRef<string | null>(null)
-  const editorContainerRef = useRef<HTMLDivElement | null>(null)
-  const generatingForTaskIdRef = useRef<string | null>(null)
-
-  // 监听编辑器预览模式变化
-  useEffect(() => {
-    const container = editorContainerRef.current
-    if (!container) return
-
-    const observer = new MutationObserver(() => {
-      const editorEl = container.querySelector('.w-md-editor')
-      if (!editorEl) return
-      
-      let detectedMode: 'edit' | 'live' | 'preview' = 'live'
-      if (editorEl.classList.contains('w-md-editor-show-edit')) {
-        detectedMode = 'edit'
-      } else if (editorEl.classList.contains('w-md-editor-show-preview')) {
-        detectedMode = 'preview'
-      } else if (editorEl.classList.contains('w-md-editor-show-live')) {
-        detectedMode = 'live'
-      }
-      
-      if (detectedMode !== previewMode) {
-        updateSettings({ editorPreviewMode: detectedMode })
-      }
-    })
-
-    observer.observe(container, { 
-      subtree: true, 
-      attributes: true, 
-      attributeFilter: ['class'] 
-    })
-
-    return () => observer.disconnect()
-  }, [previewMode])
-
-  // 加载任务内容的函数
-  const loadTaskContent = useCallback((taskItem: TaskItem) => {
-    // 清理之前的定时器
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current)
-      autoSaveTimerRef.current = null
-    }
-    
-    // 检查是否已有笔记内容（非空）
-    if (taskItem.note?.content && taskItem.note.content.trim().length > 0) {
-      setContent(taskItem.note.content)
-      setHasChanges(false)
-      setLastSavedAt(taskItem.note.updatedAt ? new Date(taskItem.note.updatedAt) : null)
-    } else {
-      // 没有笔记，生成智能模板
-      setContent(getDefaultTemplate(taskItem.title))
-      setLastSavedAt(null)
-      setHasChanges(false)
-      
-      // 记录正在为哪个任务生成模板
-      generatingForTaskIdRef.current = taskItem.id
-      generateSmartTemplate(taskItem).then(template => {
-        // 确保还是同一个任务
-        if (generatingForTaskIdRef.current === taskItem.id && prevTaskIdRef.current === taskItem.id) {
-          setContent(template)
-        }
-      })
-    }
-  }, [settings.apiKey])
-
-  // 执行保存
-  const doSave = (taskId: string, noteContent: string) => {
-    if (!noteContent.trim()) return
-    setIsSaving(true)
-    onSave(taskId, noteContent)
-    setHasChanges(false)
-    setLastSavedAt(new Date())
-    setTimeout(() => setIsSaving(false), 500)
-  }
-
-  // 生成智能模板
-  const generateSmartTemplate = async (taskItem: TaskItem) => {
-    if (!settings.apiKey) {
-      // 如果没有 API Key，使用简单模板
-      const template = `# ${taskItem.title}
-
-## 学习目标
-
-> ${taskItem.description}
-
-## 核心内容
-
-### 
-
-## 实践记录
-
-\`\`\`
-// 在这里记录代码或操作步骤
-\`\`\`
-
-## 验收自检
-
-- [ ] ${taskItem.deliverable.title}: ${taskItem.deliverable.description}
-
-## 个人总结
-
-> 
-`
-      // 自动保存模板
-      doSave(taskItem.id, template)
-      return template
-    }
-
-    setIsGeneratingTemplate(true)
-    try {
-      const template = await aiService.generateNoteTemplate(
-        taskItem.title,
-        taskItem.description,
-        taskItem.deliverable.title,
-        taskItem.deliverable.description,
-        taskItem.deliverable.type
-      )
-      // AI生成模板后自动保存
-      doSave(taskItem.id, template)
-      return template
-    } catch (err) {
-      console.error('生成模板失败:', err)
-      // 失败时返回基础模板
-      const fallbackTemplate = `# ${taskItem.title}
-
-## 学习目标
-
-> ${taskItem.description}
-
-## 核心内容
-
-### 
-
-## 验收自检
-
-- [ ] ${taskItem.deliverable.title}: ${taskItem.deliverable.description}
-
-## 个人总结
-
-> 
-`
-      doSave(taskItem.id, fallbackTemplate)
-      return fallbackTemplate
-    } finally {
-      setIsGeneratingTemplate(false)
-    }
-  }
-
-  // 切换任务时加载内容 - 只在任务ID真正变化时触发
-  useEffect(() => {
-    if (!task) {
-      prevTaskIdRef.current = null
-      return
-    }
-    
-    // 检查是否是真正的任务切换
-    if (prevTaskIdRef.current === task.id) {
-      return // 同一个任务，不重新加载
-    }
-    
-    // 更新前一个任务ID
-    prevTaskIdRef.current = task.id
-    
-    // 加载新任务的内容
-    loadTaskContent(task)
-  }, [task?.id, loadTaskContent])
-
-  // 检测变化并触发自动保存
-  useEffect(() => {
-    if (task && !isGeneratingTemplate && prevTaskIdRef.current === task.id) {
-      const originalContent = task.note?.content || ''
-      const changed = content !== originalContent && content.trim() !== ''
-      setHasChanges(changed)
-      
-      // 有变化时启动自动保存（2秒防抖）
-      if (changed) {
-        if (autoSaveTimerRef.current) {
-          clearTimeout(autoSaveTimerRef.current)
-        }
-        autoSaveTimerRef.current = setTimeout(() => {
-          doSave(task.id, content)
-        }, 2000)
-      }
-    }
-    
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-      }
-    }
-  }, [content, task, isGeneratingTemplate])
-
-  const handleSave = () => {
-    if (task) {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current)
-      }
-      doSave(task.id, content)
-    }
-  }
-
-  const handleRegenerateTemplate = async () => {
-    if (task && !isGeneratingTemplate) {
-      const template = await generateSmartTemplate(task)
-      setContent(template)
-    }
-  }
-
-  if (!task) {
-    return (
-      <div className="h-full flex items-center justify-center bg-gray-50">
-        <div className="text-center text-gray-400">
-          <PenLine className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>选择一个任务开始记录笔记</p>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="h-full flex flex-col bg-white">
-      {/* 笔记头部 */}
-      <div className="flex items-center justify-between p-3 border-b border-gray-100">
-        <div className="flex items-center gap-2 min-w-0">
-          <PenLine className="w-4 h-4 text-primary-500 flex-shrink-0" />
-          <span className="font-medium text-gray-800 truncate">{task.title}</span>
-          {isGeneratingTemplate && (
-            <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full flex-shrink-0 flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              生成模板中
-            </span>
-          )}
-          {isSaving && !isGeneratingTemplate && (
-            <span className="px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full flex-shrink-0 flex items-center gap-1">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              保存中
-            </span>
-          )}
-          {hasChanges && !isGeneratingTemplate && !isSaving && (
-            <span className="px-2 py-0.5 bg-yellow-100 text-yellow-600 text-xs rounded-full flex-shrink-0">
-              自动保存中...
-            </span>
-          )}
-          {!hasChanges && !isGeneratingTemplate && !isSaving && lastSavedAt && (
-            <span className="text-xs text-gray-400 flex-shrink-0">
-              已保存
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleRegenerateTemplate}
-            disabled={isGeneratingTemplate}
-            title="重新生成模板"
-            className="flex items-center gap-1 px-2 py-1.5 text-gray-500 hover:text-primary-500 hover:bg-gray-100 text-sm rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isGeneratingTemplate ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!hasChanges || isGeneratingTemplate || isSaving}
-            className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-primary-500 to-purple-600 text-white text-sm rounded-lg hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save className="w-4 h-4" />
-            保存
-          </button>
-        </div>
-      </div>
-
-      {/* 编辑器 */}
-      <div ref={editorContainerRef} className="flex-1 overflow-hidden" data-color-mode="light">
-        <MDEditor
-          value={content}
-          onChange={(val) => setContent(val || '')}
-          height="100%"
-          preview={previewMode}
-          hideToolbar={false}
-          enableScroll={true}
-          visibleDragbar={false}
-          style={{ height: '100%' }}
-        />
-      </div>
-    </div>
-  )
-}
-
-// 简化的任务卡片组件（用于左侧面板）
-function TaskCard({
-  task,
-  isSelected,
-  isExpanded,
-  onSelect,
-  onToggleExpand,
-  onToggleComplete,
-  onToggleDeliverable,
-  onRegenerate,
-  onEdit,
-  isRegenerating,
-  disabled
-}: {
-  task: TaskItem
-  isSelected: boolean
-  isExpanded: boolean
-  onSelect: () => void
-  onToggleExpand: () => void
-  onToggleComplete: () => void
-  onToggleDeliverable: () => void
-  onRegenerate: () => void
-  onEdit: () => void
-  isRegenerating: boolean
-  disabled: boolean
-}) {
-  const difficulty = difficultyConfig[task.difficulty] || difficultyConfig.basic
-  const hasNote = task.note && task.note.content.trim().length > 0
-
-  return (
-    <div className={`rounded-xl border-2 overflow-hidden transition-all ${
-      isSelected
-        ? 'border-primary-500 bg-primary-50/50'
-        : task.completed 
-          ? 'border-green-200 bg-green-50/50' 
-          : 'border-gray-100 bg-white'
-    }`}>
-      {/* 任务头部 */}
-      <div 
-        className="p-3 cursor-pointer hover:bg-gray-50/50 transition-colors"
-        onClick={onSelect}
-      >
-        <div className="flex items-start gap-2">
-          {/* 完成状态 */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleComplete()
-            }}
-            disabled={disabled}
-            className="mt-0.5 flex-shrink-0"
-          >
-            {task.completed ? (
-              <CheckCircle className="w-5 h-5 text-green-500" />
-            ) : (
-              <Circle className="w-5 h-5 text-gray-300 hover:text-gray-400" />
-            )}
-          </button>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap mb-1">
-              <span className="w-5 h-5 bg-gradient-to-br from-primary-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xs font-bold">
-                {task.order}
-              </span>
-              <span className={`px-1.5 py-0.5 text-xs rounded-full ${difficulty.color}`}>
-                {difficulty.label}
-              </span>
-              {hasNote && (
-                <span className="px-1.5 py-0.5 text-xs rounded-full bg-blue-100 text-blue-600">
-                  <PenLine className="w-3 h-3" />
-                </span>
-              )}
-            </div>
-            
-            <h4 className={`text-sm font-medium ${task.completed ? 'text-green-700 line-through' : 'text-gray-800'}`}>
-              {task.title}
-            </h4>
-          </div>
-
-          {/* 展开/收起 */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onToggleExpand()
-            }}
-            className="flex-shrink-0 p-1 hover:bg-gray-100 rounded"
-          >
-            {isExpanded ? (
-              <ChevronUp className="w-4 h-4 text-gray-400" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* 展开内容 */}
-      {isExpanded && (
-        <div className="border-t border-gray-100 bg-gray-50/50 p-3 space-y-3">
-          <p className="text-xs text-gray-500">{task.description}</p>
-          
-          {/* 参考资料 */}
-          {task.resources.length > 0 && (
-            <div>
-              <h5 className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
-                <BookOpen className="w-3 h-3" />
-                参考资料
-              </h5>
-              <div className="space-y-1">
-                {task.resources.map((resource) => (
-                  <div key={resource.id} className="flex items-center gap-2 text-xs">
-                    <span className={`px-1 py-0.5 rounded ${
-                      resource.type === 'video' ? 'bg-red-100 text-red-600' :
-                      resource.type === 'article' ? 'bg-blue-100 text-blue-600' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      {resource.type === 'video' ? '视频' :
-                       resource.type === 'article' ? '文章' :
-                       resource.type === 'documentation' ? '文档' : '资料'}
-                    </span>
-                    <span className="text-gray-700 truncate">{resource.title}</span>
-                    {resource.url && (
-                      <a
-                        href={resource.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-gray-400 hover:text-primary-500"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 验收成果 */}
-          <div 
-            onClick={(e) => {
-              e.stopPropagation()
-              if (!disabled) onToggleDeliverable()
-            }}
-            className={`p-2 rounded-lg border cursor-pointer transition-all text-xs ${
-              task.deliverable.completed
-                ? 'border-green-200 bg-green-50'
-                : 'border-gray-200 bg-white hover:border-gray-300'
-            } ${disabled ? 'cursor-default' : ''}`}
-          >
-            <div className="flex items-center gap-2">
-              {task.deliverable.completed ? (
-                <CheckCircle className="w-4 h-4 text-green-500" />
-              ) : (
-                <Circle className="w-4 h-4 text-gray-300" />
-              )}
-              <span className={task.deliverable.completed ? 'text-green-700' : 'text-gray-700'}>
-                {task.deliverable.title}
-              </span>
-            </div>
-          </div>
-
-          {/* 操作按钮 */}
-          {!disabled && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onEdit()
-                }}
-                className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
-              >
-                <Edit2 className="w-3 h-3" />
-                编辑
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRegenerate()
-                }}
-                disabled={isRegenerating}
-                className="text-xs text-gray-400 hover:text-primary-500 flex items-center gap-1"
-              >
-                {isRegenerating ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3 h-3" />
-                )}
-                重新生成
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
 }
 
 export default function DailyStudy() {
@@ -892,13 +61,21 @@ export default function DailyStudy() {
   const [editingTask, setEditingTask] = useState<TaskItem | null>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [tempTitle, setTempTitle] = useState('')
+  
+  // 手动模式状态
+  const [showManualModal, setShowManualModal] = useState(false)
+  const [manualPrompt, setManualPrompt] = useState('')
+  const [manualModalTitle, setManualModalTitle] = useState('')
+  const [manualModalDesc, setManualModalDesc] = useState('')
+  const [manualResultHandler, setManualResultHandler] = useState<((result: string) => void) | null>(null)
+  const [manualParseHandler, setManualParseHandler] = useState<((result: string) => { success: boolean; error?: string }) | null>(null)
 
   const currentPlan = plans.find(p => p.id === currentPlanId)
   const rawCurrentTask = dailyTasks.find(
     t => t.planId === currentPlanId && t.day === selectedDay
   )
   
-  // 使用 useMemo 稳定 currentTask 的引用，避免不必要的重新渲染
+  // 使用 useMemo 稳定 currentTask 的引用
   const currentTask = useMemo(() => {
     if (!rawCurrentTask) return undefined
     return {
@@ -911,7 +88,7 @@ export default function DailyStudy() {
     t => t.planId === currentPlanId && t.day === selectedDay - 1
   )
 
-  // 获取当前选中的任务 - 直接计算，不使用 useMemo 避免缓存问题
+  // 获取当前选中的任务
   const selectedTask = currentTask?.tasks.find(t => t.id === selectedTaskId) || null
 
   // 默认选中第一个任务
@@ -926,7 +103,47 @@ export default function DailyStudy() {
   }, [currentTask?.id])
 
   const handleGenerateTask = async () => {
-    if (!currentPlan || !settings.apiKey) {
+    if (!currentPlan) {
+      setError('请先选择学习计划')
+      return
+    }
+
+    // 检查是否使用手动模式
+    if (settings.aiMode === 'manual') {
+      const prompt = aiService.getDailyTaskPrompt(
+        currentPlan,
+        selectedDay,
+        previousDayTask?.review
+      )
+      setManualPrompt(prompt)
+      setManualModalTitle('生成今日学习任务')
+      setManualModalDesc('复制提示词到 AI 工具，获取今日任务')
+      setManualResultHandler(() => (resultText: string) => {
+        const parseResult = aiService.parseDailyTaskResult(resultText, selectedDay)
+        if (parseResult.success && parseResult.data) {
+          const newTask: DailyTask = {
+            ...parseResult.data,
+            id: `task-${currentPlanId}-${selectedDay}`,
+            planId: currentPlanId!,
+            date: format(new Date(), 'yyyy-MM-dd'),
+            status: 'pending'
+          }
+          addDailyTask(newTask)
+          if (parseResult.data.tasks.length > 0) {
+            setSelectedTaskId(parseResult.data.tasks[0].id)
+            setExpandedTasks([parseResult.data.tasks[0].id])
+          }
+        }
+      })
+      setManualParseHandler(() => (resultText: string) => {
+        return aiService.parseDailyTaskResult(resultText, selectedDay)
+      })
+      setShowManualModal(true)
+      return
+    }
+
+    // API 模式
+    if (!settings.apiKey) {
       setError('请先配置 API Key')
       return
     }
@@ -1084,6 +301,33 @@ export default function DailyStudy() {
     )
     
     updateDailyTask(currentTask.id, { tasks: updatedTasks })
+  }
+
+  // 打开笔记模板手动生成弹窗
+  const handleOpenNoteTemplateManualModal = (taskItem: TaskItem) => {
+    const prompt = aiService.getNoteTemplatePrompt(
+      taskItem.title,
+      taskItem.description,
+      taskItem.deliverable.title,
+      taskItem.deliverable.description,
+      taskItem.deliverable.type
+    )
+    setManualPrompt(prompt)
+    setManualModalTitle('生成笔记模板')
+    setManualModalDesc('复制提示词到 AI 工具，获取智能笔记模板')
+    setManualResultHandler(() => (resultText: string) => {
+      const parseResult = aiService.parseNoteTemplateResult(resultText)
+      if (parseResult.success && parseResult.data) {
+        const applyFn = (window as unknown as Record<string, (template: string) => void>)[`applyNoteTemplate_${taskItem.id}`]
+        if (applyFn) {
+          applyFn(parseResult.data)
+        }
+      }
+    })
+    setManualParseHandler(() => (resultText: string) => {
+      return aiService.parseNoteTemplateResult(resultText)
+    })
+    setShowManualModal(true)
   }
 
   // 更新任务
@@ -1366,6 +610,7 @@ export default function DailyStudy() {
           <NotePanel
             task={selectedTask}
             onSave={handleSaveNote}
+            onOpenManualModal={handleOpenNoteTemplateManualModal}
           />
         </div>
       </div>
@@ -1388,6 +633,17 @@ export default function DailyStudy() {
           onClose={() => setEditingTask(null)}
         />
       )}
+
+      {/* 手动模式弹窗 */}
+      <ManualModeModal
+        isOpen={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        prompt={manualPrompt}
+        title={manualModalTitle}
+        description={manualModalDesc}
+        onResult={(result) => manualResultHandler?.(result)}
+        parseResult={(result) => manualParseHandler?.(result) || { success: false, error: '解析器未初始化' }}
+      />
     </div>
   )
 }

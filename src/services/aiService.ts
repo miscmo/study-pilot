@@ -1,5 +1,17 @@
 import type { StudyPlan, StudyOutlineItem, DailyTask, TaskItem, TaskReview, Resource, Deliverable } from '../types'
 
+// 自定义错误类型
+export class AIServiceError extends Error {
+  constructor(
+    message: string,
+    public code: 'API_ERROR' | 'PARSE_ERROR' | 'VALIDATION_ERROR' | 'CONFIG_ERROR' | 'NETWORK_ERROR',
+    public originalError?: unknown
+  ) {
+    super(message)
+    this.name = 'AIServiceError'
+  }
+}
+
 interface AIServiceConfig {
   apiKey: string
   apiEndpoint: string
@@ -46,44 +58,66 @@ class AIService {
           return JSON.parse(fixedJson)
         }
       }
-      throw new Error('无法从响应中提取有效的 JSON')
+      throw new AIServiceError('无法从响应中提取有效的 JSON', 'PARSE_ERROR')
     }
   }
 
   private async callAPI(messages: { role: string; content: string }[]): Promise<string> {
     if (!this.config.apiKey) {
-      throw new Error('请先在设置中配置 API Key')
+      throw new AIServiceError('请先在设置中配置 API Key', 'CONFIG_ERROR')
     }
 
-    const response = await fetch(`${this.config.apiEndpoint}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages,
-        temperature: 0.7,
-        max_tokens: 4000
+    let response: Response
+    try {
+      response = await fetch(`${this.config.apiEndpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.config.model,
+          messages,
+          temperature: 0.7,
+          max_tokens: 4000
+        })
       })
-    })
+    } catch (err) {
+      throw new AIServiceError(
+        '网络连接失败，请检查网络设置',
+        'NETWORK_ERROR',
+        err
+      )
+    }
 
     if (!response.ok) {
       let errorMessage = '调用 AI 服务失败'
+      let errorCode: AIServiceError['code'] = 'API_ERROR'
+      
       try {
         const error = await response.json()
         errorMessage = error.error?.message || error.message || errorMessage
+        
+        // 识别常见错误
+        if (response.status === 401) {
+          errorMessage = 'API Key 无效或已过期'
+          errorCode = 'CONFIG_ERROR'
+        } else if (response.status === 429) {
+          errorMessage = 'API 请求过于频繁，请稍后重试'
+        } else if (response.status >= 500) {
+          errorMessage = 'AI 服务暂时不可用，请稍后重试'
+        }
       } catch {
         errorMessage = `HTTP ${response.status}: ${response.statusText}`
       }
-      throw new Error(errorMessage)
+      
+      throw new AIServiceError(errorMessage, errorCode)
     }
 
     const data = await response.json()
     
     if (!data.choices?.[0]?.message?.content) {
-      throw new Error('AI 返回了空响应，请重试')
+      throw new AIServiceError('AI 返回了空响应，请重试', 'API_ERROR')
     }
     
     return data.choices[0].message.content
@@ -574,6 +608,342 @@ ${submissionContent}
     ])
 
     return response
+  }
+
+  // ==================== 手动模式相关方法 ====================
+
+  // 生成学习计划大纲的提示词（手动模式）
+  getStudyOutlinePrompt(
+    topic: string,
+    dailyMinutes: number,
+    totalDays: number,
+    learningGoals?: string,
+    autoCalculateDays?: boolean
+  ): string {
+    const goalsSection = learningGoals?.trim() 
+      ? `\n用户的学习目标和期望:\n${learningGoals}\n\n请特别注意根据用户描述的学习目标来定制学习内容。`
+      : ''
+
+    const daysInstruction = autoCalculateDays
+      ? `请根据学习主题的完整性和深度，自动规划需要多少天才能完整学会这个主题。`
+      : `总学习天数: ${totalDays} 天，outline 数组应该有 ${totalDays} 个元素`
+
+    return `请为以下学习主题生成一个详细的学习计划大纲。
+
+学习主题: ${topic}
+每日学习时间: ${dailyMinutes} 分钟
+${autoCalculateDays ? '' : `总学习天数: ${totalDays} 天`}
+${goalsSection}
+
+${daysInstruction}
+
+请以 JSON 格式返回，格式如下:
+{
+  "description": "学习主题描述（2-3句话）",
+  "outline": [
+    {
+      "day": 1,
+      "title": "第一天学习标题",
+      "description": "当天学习内容概述",
+      "objectives": ["目标1", "目标2", "目标3"],
+      "estimatedMinutes": ${dailyMinutes}
+    }
+  ]
+}
+
+注意:
+- 学习内容应该循序渐进，由浅入深
+- 每天的学习目标应该具体可衡量
+- 只返回 JSON，不要有其他内容`
+  }
+
+  // 解析学习计划大纲结果（手动模式）
+  parseStudyOutlineResult(response: string): { 
+    success: boolean
+    error?: string
+    data?: { description: string; outline: StudyOutlineItem[] }
+  } {
+    try {
+      const parsed = this.parseJSONResponse(response) as {
+        description: string
+        outline: Omit<StudyOutlineItem, 'id'>[]
+      }
+      
+      if (!parsed.description || !Array.isArray(parsed.outline) || parsed.outline.length === 0) {
+        return { success: false, error: '返回的数据结构不正确，需要包含 description 和 outline 数组' }
+      }
+      
+      const outline: StudyOutlineItem[] = parsed.outline.map((item, index: number) => ({
+        ...item,
+        id: `outline-${index + 1}`,
+        day: item.day || index + 1,
+        title: item.title || `第 ${index + 1} 天`,
+        description: item.description || '',
+        objectives: item.objectives || [],
+        estimatedMinutes: item.estimatedMinutes || 60
+      }))
+
+      return {
+        success: true,
+        data: { description: parsed.description, outline }
+      }
+    } catch (err) {
+      return { 
+        success: false, 
+        error: `解析失败: ${err instanceof Error ? err.message : '请确保复制了完整的 JSON 内容'}` 
+      }
+    }
+  }
+
+  // 生成每日任务的提示词（手动模式）
+  getDailyTaskPrompt(
+    plan: StudyPlan,
+    day: number,
+    previousDayReview?: TaskReview
+  ): string {
+    const outlineItem = plan.outline.find(o => o.day === day)
+    if (!outlineItem) {
+      return '找不到对应的学习大纲'
+    }
+
+    let contextInfo = ''
+    if (previousDayReview) {
+      contextInfo = `
+昨日学习情况:
+- 得分: ${previousDayReview.score}/100
+- 反馈: ${previousDayReview.feedback}
+
+请根据昨日的学习情况适当调整今日内容。`
+    }
+
+    return `请为学生生成今天的具体学习任务。
+
+学习主题: ${plan.topic}
+今天是第 ${day} 天 / 共 ${plan.totalDays} 天
+今日学习时间: ${plan.dailyStudyMinutes} 分钟
+今日学习主题: ${outlineItem.title}
+今日学习描述: ${outlineItem.description}
+今日学习目标: ${outlineItem.objectives.join(', ')}
+${contextInfo}
+
+请生成详细的学习任务，以 JSON 格式返回:
+{
+  "title": "今日学习标题",
+  "tasks": [
+    {
+      "order": 1,
+      "title": "任务标题",
+      "description": "详细描述",
+      "difficulty": "basic|intermediate|advanced",
+      "estimatedMinutes": 20,
+      "resources": [
+        {
+          "title": "资源标题",
+          "type": "article|video|book|documentation|practice",
+          "url": "资源链接（可选）",
+          "description": "资源描述"
+        }
+      ],
+      "deliverable": {
+        "title": "成果标题",
+        "description": "验收内容描述",
+        "type": "note|code|project|quiz|summary"
+      }
+    }
+  ]
+}
+
+注意:
+- tasks 应该有 3-5 个任务，按 order 递增
+- 任务从基础到进阶排列
+- 只返回 JSON，不要有其他内容`
+  }
+
+  // 解析每日任务结果（手动模式）
+  parseDailyTaskResult(response: string, day: number): {
+    success: boolean
+    error?: string
+    data?: Omit<DailyTask, 'id' | 'planId' | 'date' | 'status'>
+  } {
+    try {
+      const parsed = this.parseJSONResponse(response) as {
+        title: string
+        tasks: {
+          order: number
+          title: string
+          description: string
+          difficulty: string
+          estimatedMinutes: number
+          resources: { title: string; type: string; url?: string; description: string; author?: string }[]
+          deliverable: { title: string; description: string; type: string }
+        }[]
+      }
+
+      if (!parsed.title || !Array.isArray(parsed.tasks) || parsed.tasks.length === 0) {
+        return { success: false, error: '返回的数据结构不正确，需要包含 title 和 tasks 数组' }
+      }
+
+      const sortedTasks = parsed.tasks.sort((a, b) => (a.order || 0) - (b.order || 0))
+
+      return {
+        success: true,
+        data: {
+          day,
+          title: parsed.title,
+          tasks: sortedTasks.map((t, i: number) => ({
+            id: `task-${day}-${i + 1}`,
+            order: t.order || i + 1,
+            title: t.title,
+            description: t.description,
+            difficulty: (['basic', 'intermediate', 'advanced'].includes(t.difficulty) 
+              ? t.difficulty 
+              : 'basic') as 'basic' | 'intermediate' | 'advanced',
+            completed: false,
+            estimatedMinutes: t.estimatedMinutes || 20,
+            resources: (t.resources || []).map((r, ri: number): Resource => ({
+              id: `resource-${day}-${i + 1}-${ri + 1}`,
+              title: r.title,
+              type: (['article', 'video', 'book', 'documentation', 'practice'].includes(r.type) 
+                ? r.type 
+                : 'article') as Resource['type'],
+              url: r.url || undefined,
+              description: r.description,
+              author: r.author
+            })),
+            deliverable: {
+              id: `deliverable-${day}-${i + 1}`,
+              title: t.deliverable?.title || '完成任务',
+              description: t.deliverable?.description || '完成上述任务要求',
+              type: (['note', 'code', 'project', 'quiz', 'summary'].includes(t.deliverable?.type)
+                ? t.deliverable.type
+                : 'note') as Deliverable['type'],
+              completed: false
+            }
+          }))
+        }
+      }
+    } catch (err) {
+      return { 
+        success: false, 
+        error: `解析失败: ${err instanceof Error ? err.message : '请确保复制了完整的 JSON 内容'}` 
+      }
+    }
+  }
+
+  // 生成评审的提示词（手动模式）
+  getReviewPrompt(
+    plan: StudyPlan,
+    dailyTask: DailyTask,
+    submissionContent: string
+  ): string {
+    const tasksInfo = dailyTask.tasks.map(t => 
+      `- 任务${t.order}: ${t.title}\n  验收成果: ${t.deliverable.title}`
+    ).join('\n')
+
+    return `请评审学生提交的学习成果。
+
+学习主题: ${plan.topic}
+今日学习标题: ${dailyTask.title}
+
+今日学习任务:
+${tasksInfo}
+
+学生提交的内容:
+${submissionContent}
+
+请以 JSON 格式返回评审结果:
+{
+  "score": 85,
+  "feedback": "总体评价（2-3句话）",
+  "strengths": ["优点1", "优点2"],
+  "improvements": ["待改进1", "待改进2"]
+}
+
+评分标准: 90-100优秀，80-89良好，70-79合格，60-69及格，60以下不及格
+只返回 JSON，不要有其他内容`
+  }
+
+  // 解析评审结果（手动模式）
+  parseReviewResult(response: string): {
+    success: boolean
+    error?: string
+    data?: TaskReview
+  } {
+    try {
+      const parsed = this.parseJSONResponse(response) as {
+        score: number
+        feedback: string
+        strengths: string[]
+        improvements: string[]
+      }
+
+      if (typeof parsed.score !== 'number' || !parsed.feedback) {
+        return { success: false, error: '返回的数据结构不正确，需要包含 score 和 feedback' }
+      }
+
+      return {
+        success: true,
+        data: {
+          score: parsed.score,
+          feedback: parsed.feedback,
+          strengths: parsed.strengths || [],
+          improvements: parsed.improvements || [],
+          reviewedAt: new Date().toISOString()
+        }
+      }
+    } catch (err) {
+      return { 
+        success: false, 
+        error: `解析失败: ${err instanceof Error ? err.message : '请确保复制了完整的 JSON 内容'}` 
+      }
+    }
+  }
+
+  // 生成笔记模板的提示词（手动模式）
+  getNoteTemplatePrompt(
+    taskTitle: string,
+    taskDescription: string,
+    deliverableTitle: string,
+    deliverableDescription: string,
+    deliverableType: string
+  ): string {
+    return `请根据以下学习任务信息，生成一个 Markdown 笔记模板。
+
+任务标题: ${taskTitle}
+任务描述: ${taskDescription}
+验收成果: ${deliverableTitle}
+验收要求: ${deliverableDescription}
+成果类型: ${deliverableType}
+
+模板要求:
+1. 模板必须紧密围绕任务目标和验收要求设计
+2. 用户按照模板填写完成后，应该能够满足验收要求
+3. 包含具体的填写引导
+4. 根据成果类型调整模板结构
+5. 最后包含"验收自检"部分
+
+请直接返回 Markdown 格式的模板内容，不要用代码块包裹。`
+  }
+
+  // 解析笔记模板结果（手动模式）
+  parseNoteTemplateResult(response: string): {
+    success: boolean
+    error?: string
+    data?: string
+  } {
+    const content = response.trim()
+    if (!content || content.length < 50) {
+      return { success: false, error: '内容太短，请确保复制了完整的模板' }
+    }
+    
+    // 移除可能的代码块标记
+    let cleaned = content
+    const markdownMatch = cleaned.match(/```(?:markdown|md)?\s*([\s\S]*?)```/)
+    if (markdownMatch) {
+      cleaned = markdownMatch[1].trim()
+    }
+    
+    return { success: true, data: cleaned }
   }
 }
 

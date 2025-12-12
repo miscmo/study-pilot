@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { aiService } from '../services/aiService'
+import { githubService } from '../services/githubService'
 import type { StudyPlan, StudyOutlineItem } from '../types'
+import ManualModeModal from '../components/ManualModeModal'
 import { 
   Sparkles, 
   Loader2, 
@@ -16,7 +18,9 @@ import {
   X,
   Save,
   Plus,
-  Trash2
+  Trash2,
+  Github,
+  HardDrive
 } from 'lucide-react'
 import { format } from 'date-fns'
 
@@ -155,6 +159,19 @@ export default function PlanCreator() {
   const [editingDescription, setEditingDescription] = useState(false)
   const [tempDescription, setTempDescription] = useState('')
   
+  // 手动模式状态
+  const [showManualModal, setShowManualModal] = useState(false)
+  const [manualPrompt, setManualPrompt] = useState('')
+  
+  // 错误状态
+  const [error, setError] = useState('')
+  
+  // 存储方式选择
+  const [storageType, setStorageType] = useState<'local' | 'github'>('local')
+  const [githubRepoName, setGithubRepoName] = useState('')
+  const [isCreatingRepo, setIsCreatingRepo] = useState(false)
+  const [repoPrivate, setRepoPrivate] = useState(false)
+  
   // 从 store 获取草稿状态
   const { 
     topic, 
@@ -190,41 +207,85 @@ export default function PlanCreator() {
 
   const handleGenerate = async () => {
     if (!topic.trim()) {
+      setError('请输入学习主题')
       return
     }
+
+    setError('')
+    const actualMinutes = getActualDailyMinutes()
+    
+    // 检查是否使用手动模式
+    if (settings.aiMode === 'manual') {
+      const prompt = aiService.getStudyOutlinePrompt(
+        topic,
+        actualMinutes,
+        autoCalculateDays ? 0 : totalDays,
+        learningGoals,
+        autoCalculateDays
+      )
+      setManualPrompt(prompt)
+      setShowManualModal(true)
+      return
+    }
+
+    // API 模式
     if (!settings.apiKey) {
+      setError('请先在设置中配置 API Key')
       return
     }
+
+    // 配置 AI 服务
+    aiService.setConfig({
+      apiKey: settings.apiKey,
+      apiEndpoint: settings.apiEndpoint,
+      model: settings.model
+    })
 
     setStep('generating')
 
     try {
-      const actualMinutes = getActualDailyMinutes()
       const result = await aiService.generateStudyOutline(
         topic, 
         actualMinutes, 
-        autoCalculateDays ? 0 : totalDays,  // 0 表示让 AI 自动规划
+        autoCalculateDays ? 0 : totalDays,
         learningGoals,
         autoCalculateDays
       )
       setGeneratedOutline(result)
-      // 如果是自动规划，更新实际的天数
       if (autoCalculateDays && result.outline.length > 0) {
         setTotalDays(result.outline.length)
       }
       setStep('preview')
     } catch (err) {
       console.error('生成失败:', err)
+      setError(err instanceof Error ? err.message : '生成失败，请重试')
       setStep('input')
     }
   }
 
-  const handleSave = () => {
+  // 手动模式结果处理
+  const handleManualResult = (resultText: string) => {
+    const parseResult = aiService.parseStudyOutlineResult(resultText)
+    if (parseResult.success && parseResult.data) {
+      setGeneratedOutline(parseResult.data)
+      if (autoCalculateDays && parseResult.data.outline.length > 0) {
+        setTotalDays(parseResult.data.outline.length)
+      }
+      setStep('preview')
+    }
+  }
+
+  const parseManualResult = (resultText: string) => {
+    return aiService.parseStudyOutlineResult(resultText)
+  }
+
+  const handleSave = async () => {
     if (!generatedOutline) return
 
     const actualMinutes = getActualDailyMinutes()
     const actualDays = generatedOutline.outline.length
 
+    // 基础计划对象
     const newPlan: StudyPlan = {
       id: `plan-${Date.now()}`,
       topic,
@@ -234,7 +295,50 @@ export default function PlanCreator() {
       startDate: format(new Date(), 'yyyy-MM-dd'),
       outline: generatedOutline.outline,
       createdAt: new Date().toISOString(),
-      status: 'active'
+      status: 'active',
+      storageType
+    }
+
+    // 如果选择 GitHub 存储
+    if (storageType === 'github' && settings.github?.accessToken && settings.github?.user) {
+      setIsCreatingRepo(true)
+      setError('')
+      
+      try {
+        // 生成仓库名称
+        const repoName = githubRepoName.trim() || 
+          `study-${topic.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '-').toLowerCase()}-${Date.now()}`
+        
+        // 创建仓库
+        const repo = await githubService.createRepository(
+          repoName,
+          `📚 ${topic} - 由 StudyPilot 创建的学习项目`,
+          repoPrivate
+        )
+
+        if (repo) {
+          // 初始化仓库结构
+          await githubService.initializeStudyRepo(
+            settings.github.user.login,
+            repo.name,
+            { ...newPlan, github: { owner: settings.github.user.login, repo: repo.name, repoUrl: repo.html_url } }
+          )
+
+          // 更新计划的 GitHub 信息
+          newPlan.github = {
+            owner: settings.github.user.login,
+            repo: repo.name,
+            repoUrl: repo.html_url
+          }
+        }
+      } catch (err) {
+        console.error('GitHub 仓库创建失败:', err)
+        setError('GitHub 仓库创建失败: ' + (err instanceof Error ? err.message : String(err)))
+        setIsCreatingRepo(false)
+        return
+      }
+      
+      setIsCreatingRepo(false)
     }
 
     addPlan(newPlan)
@@ -488,19 +592,137 @@ export default function PlanCreator() {
             </div>
           </div>
 
+          {/* 存储方式选择 */}
+          <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">存储方式</h3>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <button
+                onClick={() => setStorageType('local')}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  storageType === 'local'
+                    ? 'border-primary-500 bg-primary-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`p-2 rounded-lg ${
+                    storageType === 'local' ? 'bg-primary-100' : 'bg-gray-100'
+                  }`}>
+                    <HardDrive className={`w-5 h-5 ${
+                      storageType === 'local' ? 'text-primary-600' : 'text-gray-500'
+                    }`} />
+                  </div>
+                  <span className="font-bold text-gray-800">本地存储</span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  数据保存在本地，不需要网络
+                </p>
+              </button>
+              
+              <button
+                onClick={() => {
+                  if (settings.github?.accessToken) {
+                    setStorageType('github')
+                  } else {
+                    setError('请先在设置中连接 GitHub 账号')
+                  }
+                }}
+                disabled={!settings.github?.accessToken}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  storageType === 'github'
+                    ? 'border-gray-900 bg-gray-50'
+                    : settings.github?.accessToken
+                      ? 'border-gray-200 hover:border-gray-300'
+                      : 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`p-2 rounded-lg ${
+                    storageType === 'github' ? 'bg-gray-900' : 'bg-gray-100'
+                  }`}>
+                    <Github className={`w-5 h-5 ${
+                      storageType === 'github' ? 'text-white' : 'text-gray-500'
+                    }`} />
+                  </div>
+                  <span className="font-bold text-gray-800">GitHub 同步</span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  {settings.github?.accessToken 
+                    ? '自动同步到 GitHub 仓库'
+                    : '需要先在设置中连接 GitHub'}
+                </p>
+              </button>
+            </div>
+
+            {storageType === 'github' && settings.github?.user && (
+              <div className="space-y-4 p-4 bg-gray-50 rounded-xl">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <img
+                    src={settings.github.user.avatar_url}
+                    alt={settings.github.user.login}
+                    className="w-5 h-5 rounded-full"
+                  />
+                  将创建到 @{settings.github.user.login} 的仓库
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    仓库名称（可选）
+                  </label>
+                  <input
+                    type="text"
+                    value={githubRepoName}
+                    onChange={(e) => setGithubRepoName(e.target.value)}
+                    placeholder={`study-${topic.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '-').toLowerCase().slice(0, 20)}`}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">留空将自动生成</p>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={repoPrivate}
+                    onChange={(e) => setRepoPrivate(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+                  />
+                  <span className="text-sm text-gray-700">创建为私有仓库</span>
+                </label>
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+          </div>
+
           {/* 操作按钮 */}
           <div className="flex items-center justify-between">
             <button
               onClick={() => setStep('input')}
               className="px-6 py-3 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              disabled={isCreatingRepo}
             >
               返回修改
             </button>
             <button
               onClick={handleSave}
-              className="px-6 py-3 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all"
+              disabled={isCreatingRepo}
+              className="px-6 py-3 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50"
             >
-              确认并保存计划
+              {isCreatingRepo ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  正在创建 GitHub 仓库...
+                </>
+              ) : (
+                <>
+                  {storageType === 'github' && <Github className="w-4 h-4" />}
+                  确认并保存计划
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -513,6 +735,17 @@ export default function PlanCreator() {
             onClose={() => setEditingOutlineItem(null)}
           />
         )}
+
+        {/* 手动模式弹窗 */}
+        <ManualModeModal
+          isOpen={showManualModal}
+          onClose={() => setShowManualModal(false)}
+          prompt={manualPrompt}
+          title="生成学习计划大纲"
+          description="复制提示词到 AI 工具，获取学习计划"
+          onResult={handleManualResult}
+          parseResult={parseManualResult}
+        />
       </div>
     )
   }
@@ -686,16 +919,22 @@ export default function PlanCreator() {
           </div>
 
           {/* 错误提示 */}
-          {!settings.apiKey && (
+          {settings.aiMode === 'api' && !settings.apiKey && (
             <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-yellow-700 text-sm">
               请先在设置中配置 API Key
+            </div>
+          )}
+          
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              {error}
             </div>
           )}
 
           {/* 生成按钮 */}
           <button
             onClick={handleGenerate}
-            disabled={!topic.trim() || !settings.apiKey}
+            disabled={!topic.trim() || (settings.aiMode === 'api' && !settings.apiKey)}
             className="w-full py-4 bg-gradient-to-r from-primary-500 to-purple-600 text-white rounded-xl hover:shadow-lg transition-all flex items-center justify-center gap-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Sparkles className="w-5 h-5" />
@@ -703,6 +942,17 @@ export default function PlanCreator() {
           </button>
         </div>
       </div>
+
+      {/* 手动模式弹窗 */}
+      <ManualModeModal
+        isOpen={showManualModal}
+        onClose={() => setShowManualModal(false)}
+        prompt={manualPrompt}
+        title="生成学习计划大纲"
+        description="复制提示词到 AI 工具，获取学习计划"
+        onResult={handleManualResult}
+        parseResult={parseManualResult}
+      />
     </div>
   )
 }

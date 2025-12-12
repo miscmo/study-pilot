@@ -9,6 +9,13 @@ export interface StudyPlan {
   outline: StudyOutlineItem[]
   createdAt: string
   status: 'active' | 'completed' | 'paused'
+  // GitHub 集成
+  storageType: 'local' | 'github'
+  github?: {
+    owner: string
+    repo: string
+    repoUrl: string
+  }
 }
 
 // 大纲项目
@@ -103,6 +110,17 @@ export interface ApiKeyConfig {
   lastUsedAt?: string
 }
 
+// GitHub 配置
+export interface GitHubSettings {
+  accessToken: string | null
+  clientId: string
+  user: {
+    login: string
+    name: string | null
+    avatar_url: string
+  } | null
+}
+
 // 应用设置
 export interface AppSettings {
   apiKey: string
@@ -112,4 +130,7 @@ export interface AppSettings {
   apiKeys: ApiKeyConfig[]
   activeKeyId: string | null
   editorPreviewMode: 'edit' | 'live' | 'preview'  // 编辑器预览模式
+  aiMode: 'api' | 'manual'  // AI模式：API自动模式 / 手动复制粘贴模式
+  // GitHub 集成
+  github: GitHubSettings
 }
